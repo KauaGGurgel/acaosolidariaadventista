@@ -8,8 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "@google/genai": "^0.1.1",
+ "dependencies": {
+    "@google/genai": "latest"
     "@supabase/supabase-js": "^2.39.0",
     "lucide-react": "^0.300.0",
     "react": "^18.2.0",
