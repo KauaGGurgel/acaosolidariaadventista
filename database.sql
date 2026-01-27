@@ -1,0 +1,3 @@
+-- [DEPRECATED] 
+-- MIGRATED TO SUPABASE (POSTGRESQL)
+-- Please use supabase_schema.sql for the current database structure.
