@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js'; import { GoogleGenAI } from "@google/genai"; import {    LayoutDashboard, Users, Package, ShoppingBasket, HeartHandshake, Menu, X, Plus, Trash2, Edit2, Search, AlertTriangle, MinusCircle, PlusCircle, Phone, MapPin, Calendar, CheckCircle, Calculator, ArrowRight, Sparkles, BookOpen, Utensils, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@supabase/supabase-js'; import { GoogleGenAI } from "@google/genai"; import {    LayoutDashboard, Users, Package, ShoppingBasket, HeartHandshake, Menu, X, Plus, Trash2, Edit2, Search, AlertTriangle, MinusCircle, PlusCircle, Phone, MapPin, Calendar, CheckCircle, Calculator, ArrowRight, Sparkles, BookOpen, Utensils, Loader2, TrendingUp } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 // ==========================================
