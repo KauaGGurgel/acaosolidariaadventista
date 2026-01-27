@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -6,7 +6,7 @@ import {
   Plus, Trash2, Edit2, Search, AlertTriangle, ArrowDown, MinusCircle, PlusCircle, 
   BellRing, Phone, MapPin, Calendar, History, Clock, CheckCircle, MessageSquare, 
   ShoppingBag, Calculator, RefreshCw, Save, ArrowRight, Check, Sparkles, BookOpen, 
-  Utensils, Loader2, Copy, Database, AlertCircle 
+  Utensils, Loader2, Copy, Database, AlertCircle, TrendingUp
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
