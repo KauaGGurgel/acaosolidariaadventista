@@ -1,73 +1,19 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import {
-  LayoutDashboard,
-  Users,
-  Package,
-  HeartHandshake,
-  Menu,
-  X,
-  Plus,
-  Trash2,
-  Edit2,
-  Search,
-  Phone,
-  MapPin,
-  Calendar,
-  CheckCircle,
-  Calculator,
-  ArrowRight,
-  Sparkles,
-  BookOpen,
-  Utensils,
-  Loader2,
-  TrendingUp,
-} from "lucide-react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from "recharts";
+import { Loader2 } from "lucide-react";
 
-/* ============================================================================
-   SUPABASE
-============================================================================ */
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const supabase =
-  supabaseUrl && supabaseKey
-    ? createClient(supabaseUrl, supabaseKey)
-    : null;
+  supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 const isSupabaseConfigured = () => !!supabase;
 
-/* ============================================================================
-   TIPOS
-============================================================================ */
-interface Beneficiario {
-  id: string;
-  name: string;
-  familySize: number;
-  address?: string;
-  phone?: string;
-  notes?: string;
-  lastBasketDate?: string;
-}
-
-/* ============================================================================
-   APP
-============================================================================ */
 export default function App() {
-  const [loading, setLoading] = useState(true);
-
-  /* -------------------- AUTH -------------------- */
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -82,42 +28,41 @@ export default function App() {
     !isSupabaseConfigured()
       ? true
       : adminEmails.length === 0
-      ? !!session
-      : !!session?.user?.email &&
-        adminEmails.includes(session.user.email.toLowerCase());
+        ? !!session
+        : !!session?.user?.email &&
+          adminEmails.includes(String(session.user.email).toLowerCase());
 
   useEffect(() => {
     if (!supabase) {
       setAuthLoading(false);
-      setLoading(false);
       return;
     }
 
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthLoading(false);
-      setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, s) => setSession(s)
-    );
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
 
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
-    if (!supabase) return;
+
+    if (!supabase) {
+      setAuthError(
+        "Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Netlify e faça redeploy."
+      );
+      return;
+    }
 
     setAuthBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     setAuthBusy(false);
 
     if (error) setAuthError(error.message);
@@ -126,24 +71,6 @@ export default function App() {
   const handleLogout = async () => {
     if (supabase) await supabase.auth.signOut();
   };
-
-  /* -------------------- DATA -------------------- */
-  const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([]);
-
-  useEffect(() => {
-    if (!supabase || !session) return;
-
-    supabase
-      .from("beneficiarios")
-      .select("*")
-      .then(({ data }) => {
-        if (data) setBeneficiarios(data);
-      });
-  }, [session]);
-
-  /* ============================================================================
-     TELAS
-============================================================================ */
 
   if (authLoading) {
     return (
@@ -155,35 +82,43 @@ export default function App() {
 
   if (isSupabaseConfigured() && !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-6">
-        <div className="bg-white rounded-xl shadow p-6 w-full max-w-md">
-          <h1 className="text-2xl font-bold">Login</h1>
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow p-6">
+          <h1 className="text-2xl font-bold text-slate-900">Entrar</h1>
 
           <form onSubmit={handleLogin} className="mt-6 space-y-4">
-            <input
-              type="email"
-              placeholder="Email"
-              className="w-full border rounded p-2"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <input
-              type="password"
-              placeholder="Senha"
-              className="w-full border rounded p-2"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-700">E-mail</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Senha</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                required
+              />
+            </div>
 
             {authError && (
-              <div className="text-red-600 text-sm">{authError}</div>
+              <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 px-3 py-2 text-sm">
+                {authError}
+              </div>
             )}
 
             <button
+              type="submit"
               disabled={authBusy}
-              className="w-full bg-blue-600 text-white py-2 rounded"
+              className="w-full rounded-lg bg-blue-700 text-white font-semibold py-2 disabled:opacity-60"
             >
               {authBusy ? "Entrando..." : "Entrar"}
             </button>
@@ -195,15 +130,16 @@ export default function App() {
 
   if (isSupabaseConfigured() && session && !isAuthorized) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="bg-white p-6 rounded shadow">
-          <p className="mb-4">
-            Você está logado como <b>{session.user.email}</b>, mas não tem
-            permissão.
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow p-6">
+          <h1 className="text-2xl font-bold text-slate-900">Acesso negado</h1>
+          <p className="text-slate-700 mt-2">
+            Você está logado como <span className="font-semibold">{String(session.user?.email || "")}</span>,
+            mas não está na lista de administradores.
           </p>
           <button
             onClick={handleLogout}
-            className="bg-black text-white px-4 py-2 rounded"
+            className="mt-6 rounded-lg bg-slate-900 text-white font-semibold px-4 py-2"
           >
             Sair
           </button>
@@ -212,37 +148,18 @@ export default function App() {
     );
   }
 
-  /* -------------------- APP PRINCIPAL -------------------- */
   return (
-    <div className="p-6">
-      <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">ASA – Gestão Solidária</h1>
-        {session && (
-          <button
-            onClick={handleLogout}
-            className="text-sm bg-gray-800 text-white px-3 py-1 rounded"
-          >
-            Sair
-          </button>
-        )}
-      </header>
-
-      <section>
-        <h2 className="text-xl font-semibold mb-2">Beneficiários</h2>
-
-        <ul className="space-y-2">
-          {beneficiarios.map((b) => (
-            <li
-              key={b.id}
-              className="border rounded p-3 flex justify-between"
-            >
-              <span>
-                {b.name} – {b.familySize} pessoas
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+    <div className="min-h-screen p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Sistema ASA</h1>
+        <button
+          onClick={handleLogout}
+          className="rounded-lg bg-slate-900 text-white font-semibold px-4 py-2"
+        >
+          Sair
+        </button>
+      </div>
+      <p className="mt-6 text-slate-700">Logado com sucesso.</p>
     </div>
   );
 }
