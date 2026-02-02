@@ -87,14 +87,14 @@ const Sidebar: React.FC<{
   const [imgError, setImgError] = useState(false);
   const menuItems = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
+    { id: 'people', label: 'Beneficiários', icon: Users },
     { id: 'inventory', label: 'Estoque (Despensa)', icon: Package },
     { id: 'events', label: 'Eventos / Entregas', icon: Calendar },
     { id: 'messages', label: 'Mensagens', icon: MessageSquare },
-    { id: 'people', label: 'Beneficiários', icon: Users },
     { id: 'baskets', label: 'Cestas Básicas', icon: ShoppingBasket },
     { id: 'ai-assistant', label: 'Assistente ASA', icon: HeartHandshake },
   ];
-  const logoUrl = "/asa-logo.png";
+  const logoUrl = "/asa-logo.jpg";
 
   return (
     <>
@@ -846,7 +846,7 @@ export default function App() {
       <Sidebar currentView={view} setCurrentView={setView} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
          <header className="md:hidden bg-blue-900 text-white p-4 flex justify-between items-center shadow">
-            <div className="font-bold">ASA Gestão</div>
+            <div className="flex items-center gap-2 font-bold"><img src="/asa-logo.jpg" alt="ASA" className="h-7 w-7 rounded bg-white p-0.5 object-contain" /><span>ASA Gestão</span></div>
             <div className="flex items-center gap-2">
               <button onClick={logout} className="bg-white/10 px-3 py-2 rounded-lg text-sm">Sair</button>
               <button onClick={()=>setSidebarOpen(true)}><Menu/></button>
