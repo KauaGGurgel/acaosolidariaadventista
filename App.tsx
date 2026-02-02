@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import {LayoutDashboard, Users, Package, ShoppingBasket, HeartHandshake, Menu, X, Plus, Trash2, Edit2, Search, AlertTriangle, MinusCircle, PlusCircle, Phone, MapPin, Calendar, CheckCircle, Calculator, ArrowRight, Sparkles, BookOpen, Utensils, Loader2, TrendingUp} from 'lucide-react';
+import {LayoutDashboard, Users, Package, ShoppingBasket, HeartHandshake, Menu, X, Plus, Trash2, Edit2, Search, AlertTriangle, MinusCircle, PlusCircle, Phone, MapPin, Calendar, CheckCircle, Calculator, ArrowRight, Sparkles, BookOpen, Utensils, Loader2, TrendingUp, MessageSquare} from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 // ==========================================
@@ -48,7 +48,7 @@ export interface DeliveryEvent {
   description?: string;
 }
 
-export type ViewState = 'dashboard' | 'people' | 'inventory' | 'baskets' | 'ai-assistant';
+export type ViewState = 'dashboard' | 'inventory' | 'events' | 'messages' | 'people' | 'baskets' | 'ai-assistant';
 
 // ==========================================
 // 2. SERVIÇOS (SUPABASE & GEMINI)
@@ -87,12 +87,14 @@ const Sidebar: React.FC<{
   const [imgError, setImgError] = useState(false);
   const menuItems = [
     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
+    { id: 'inventory', label: 'Estoque (Despensa)', icon: Package },
+    { id: 'events', label: 'Eventos / Entregas', icon: Calendar },
+    { id: 'messages', label: 'Mensagens', icon: MessageSquare },
     { id: 'people', label: 'Beneficiários', icon: Users },
-    { id: 'inventory', label: 'Estoque', icon: Package },
     { id: 'baskets', label: 'Cestas Básicas', icon: ShoppingBasket },
     { id: 'ai-assistant', label: 'Assistente ASA', icon: HeartHandshake },
   ];
-  const logoUrl = "https://www.adventistas.org/pt/asa/wp-content/uploads/sites/6/2013/05/logo_asa_cor.png";
+  const logoUrl = "/asa-logo.png";
 
   return (
     <>
@@ -399,6 +401,179 @@ const InventoryManager: React.FC<{ inventory: InventoryItem[]; setInventory: Rea
   );
 };
 
+
+
+// ==========================================
+// Eventos / Entregas
+// ==========================================
+const EventsManager: React.FC<{
+  events: DeliveryEvent[];
+  setEvents: (events: DeliveryEvent[]) => void;
+  canEdit: boolean;
+}> = ({ events, setEvents, canEdit }) => {
+  const guard = () => {
+    if (!canEdit) {
+      alert('Você não tem permissão para alterar. Peça acesso de admin.');
+      return false;
+    }
+    return true;
+  };
+
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState('');
+  const [description, setDescription] = useState('');
+
+  const saveEvents = async (next: DeliveryEvent[]) => {
+    setEvents(next);
+    if (isSupabaseConfigured() && supabase) {
+      // sincroniza (simples): regrava tudo
+      // Para produção, o ideal é CRUD por item, mas isso mantém o projeto fácil.
+      await supabase.from('eventos_entrega').delete().neq('id', '');
+      if (next.length) await supabase.from('eventos_entrega').insert(next as any);
+    } else {
+      localStorage.setItem('events', JSON.stringify(next));
+    }
+  };
+
+  const add = async () => {
+    if (!guard()) return;
+    if (!title.trim() || !date.trim()) {
+      alert('Informe título e data.');
+      return;
+    }
+    const next = [{ id: crypto.randomUUID(), title: title.trim(), date: date.trim(), description: description.trim() || undefined }, ...events];
+    await saveEvents(next);
+    setTitle(''); setDate(''); setDescription('');
+  };
+
+  const remove = async (id: string) => {
+    if (!guard()) return;
+    const next = events.filter(e => e.id !== id);
+    await saveEvents(next);
+  };
+
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-slate-900">Eventos / Entregas</h2>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow p-4 border border-slate-200">
+        <h3 className="font-semibold mb-3">Cadastrar evento</h3>
+        <div className="grid md:grid-cols-3 gap-3">
+          <input className="border rounded-xl p-3" placeholder="Título" value={title} onChange={e=>setTitle(e.target.value)} />
+          <input className="border rounded-xl p-3" placeholder="Data (YYYY-MM-DD)" value={date} onChange={e=>setDate(e.target.value)} />
+          <input className="border rounded-xl p-3 md:col-span-3" placeholder="Descrição (opcional)" value={description} onChange={e=>setDescription(e.target.value)} />
+        </div>
+        <button onClick={add} disabled={!canEdit} className="mt-3 bg-blue-900 text-white px-4 py-2 rounded-xl disabled:opacity-50">
+          Adicionar
+        </button>
+        {!canEdit && <p className="text-sm text-slate-500 mt-2">Somente leitura: peça acesso de admin para alterar.</p>}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow p-4 border border-slate-200">
+        <h3 className="font-semibold mb-3">Lista</h3>
+        {events.length === 0 ? (
+          <p className="text-slate-600">Nenhum evento cadastrado.</p>
+        ) : (
+          <div className="space-y-2">
+            {events.map(ev => (
+              <div key={ev.id} className="flex items-start justify-between gap-4 border rounded-xl p-3">
+                <div>
+                  <div className="font-semibold">{ev.title}</div>
+                  <div className="text-sm text-slate-600">{ev.date}</div>
+                  {ev.description ? <div className="text-sm mt-1">{ev.description}</div> : null}
+                </div>
+                <button onClick={()=>remove(ev.id)} disabled={!canEdit} className="text-red-600 disabled:opacity-50">
+                  <Trash2 />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// Mensagens (simples)
+// ==========================================
+const MessagesManager: React.FC<{ canEdit: boolean }> = ({ canEdit }) => {
+  const guard = () => {
+    if (!canEdit) {
+      alert('Você não tem permissão para alterar. Peça acesso de admin.');
+      return false;
+    }
+    return true;
+  };
+
+  const [messages, setMessages] = useState<{ id: string; text: string; createdAt: string }[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('messages') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [textMsg, setTextMsg] = useState('');
+
+  const save = (next: typeof messages) => {
+    setMessages(next);
+    localStorage.setItem('messages', JSON.stringify(next));
+  };
+
+  const add = () => {
+    if (!guard()) return;
+    if (!textMsg.trim()) return;
+    const next = [{ id: crypto.randomUUID(), text: textMsg.trim(), createdAt: new Date().toISOString() }, ...messages];
+    save(next);
+    setTextMsg('');
+  };
+
+  const remove = (id: string) => {
+    if (!guard()) return;
+    save(messages.filter(m => m.id !== id));
+  };
+
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-slate-900">Mensagens</h2>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow p-4 border border-slate-200">
+        <h3 className="font-semibold mb-3">Nova mensagem</h3>
+        <textarea className="border rounded-xl p-3 w-full" rows={3} placeholder="Escreva um aviso para a equipe..." value={textMsg} onChange={e=>setTextMsg(e.target.value)} />
+        <button onClick={add} disabled={!canEdit} className="mt-3 bg-blue-900 text-white px-4 py-2 rounded-xl disabled:opacity-50">
+          Publicar
+        </button>
+        {!canEdit && <p className="text-sm text-slate-500 mt-2">Somente leitura: peça acesso de admin para publicar.</p>}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow p-4 border border-slate-200">
+        <h3 className="font-semibold mb-3">Histórico</h3>
+        {messages.length === 0 ? (
+          <p className="text-slate-600">Nenhuma mensagem ainda.</p>
+        ) : (
+          <div className="space-y-2">
+            {messages.map(m => (
+              <div key={m.id} className="flex items-start justify-between gap-4 border rounded-xl p-3">
+                <div>
+                  <div className="text-sm text-slate-600">{new Date(m.createdAt).toLocaleString()}</div>
+                  <div className="mt-1">{m.text}</div>
+                </div>
+                <button onClick={()=>remove(m.id)} disabled={!canEdit} className="text-red-600 disabled:opacity-50">
+                  <Trash2 />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const BasketCalculator: React.FC<{ 
   inventory: InventoryItem[]; setInventory: (i: InventoryItem[]) => void;
   basketConfig: BasketConfig; setBasketConfig: (c: BasketConfig) => void;
@@ -671,10 +846,13 @@ export default function App() {
          </header>
          <main className="flex-1 overflow-y-auto">
             {view === 'dashboard' && <Dashboard people={people} inventory={inventory} events={events} setEvents={setEvents} canEdit={isAuthorized} />}
-            {view === 'people' && <PeopleManager people={people} setPeople={setPeople} canEdit={isAuthorized} />}
             {view === 'inventory' && <InventoryManager inventory={inventory} setInventory={setInventory} canEdit={isAuthorized} />}
-            {view === 'baskets' && <BasketCalculator inventory={inventory} setInventory={setInventory} basketConfig={basketConfig} setBasketConfig={setBasketConfig} assembledBaskets={baskets} setAssembledBaskets={setBaskets} canEdit={isAuthorized} />}
-            {view === 'ai-assistant' && <AiAssistant inventory={inventory} people={people} />}
+            {view === 'events' && <EventsManager events={events} setEvents={setEvents} canEdit={isAuthorized} />}
+            {view === 'messages' && <MessagesManager canEdit={isAuthorized} />}
+            {view === 'people' && <PeopleManager people={people} setPeople={setPeople} canEdit={isAuthorized} />}
+            {view === 'baskets' && <BasketCalculator inventory={inventory} setInventory={setInventory} baskets={baskets} setBaskets={setBaskets} basketConfig={basketConfig} setBasketConfig={setBasketConfig} canEdit={isAuthorized} />}
+            {view === 'ai-assistant' && <AIAssistant canEdit={isAuthorized} />}
+
          </main>
       </div>
     </div>
