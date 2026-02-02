@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js'; import { GoogleGenAI } from "@google/genai"; import {    LayoutDashboard, Users, Package, ShoppingBasket, HeartHandshake, Menu, X, Plus, Trash2, Edit2, Search, AlertTriangle, MinusCircle, PlusCircle, Phone, MapPin, Calendar, CheckCircle, Calculator, ArrowRight, Sparkles, BookOpen, Utensils, Loader2, TrendingUp } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+import {LayoutDashboard, Users, Package, ShoppingBasket, HeartHandshake, Menu, X, Plus, Trash2, Edit2, Search, AlertTriangle, MinusCircle, PlusCircle, Phone, MapPin, Calendar, CheckCircle, Calculator, ArrowRight, Sparkles, BookOpen, Utensils, Loader2, TrendingUp} from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
 // ==========================================
@@ -129,6 +130,14 @@ const Dashboard: React.FC<{
   setEvents: React.Dispatch<React.SetStateAction<DeliveryEvent[]>>;
   canEdit: boolean;
 }> = ({ people, inventory, events, setEvents, canEdit }) => {
+  const guard = () => {
+    if (!canEdit) {
+      alert('Apenas administradores podem alterar dados.');
+      return false;
+    }
+    return true;
+  };
+
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [newEvent, setNewEvent] = useState({ title: '', date: '', desc: '' });
 
@@ -200,6 +209,14 @@ const Dashboard: React.FC<{
 };
 
 const PeopleManager: React.FC<{ people: Person[]; setPeople: React.Dispatch<React.SetStateAction<Person[]>>; canEdit: boolean; }> = ({ people, setPeople, canEdit }) => {
+  const guard = () => {
+    if (!canEdit) {
+      alert('Apenas administradores podem alterar dados.');
+      return false;
+    }
+    return true;
+  };
+
   const [modal, setModal] = useState(false);
   const [formData, setFormData] = useState<Partial<Person>>({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -302,6 +319,14 @@ const PeopleManager: React.FC<{ people: Person[]; setPeople: React.Dispatch<Reac
 };
 
 const InventoryManager: React.FC<{ inventory: InventoryItem[]; setInventory: React.Dispatch<React.SetStateAction<InventoryItem[]>>; canEdit: boolean; }> = ({ inventory, setInventory, canEdit }) => {
+  const guard = () => {
+    if (!canEdit) {
+      alert('Apenas administradores podem alterar dados.');
+      return false;
+    }
+    return true;
+  };
+
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Partial<InventoryItem>>({});
   const [search, setSearch] = useState('');
@@ -380,6 +405,14 @@ const BasketCalculator: React.FC<{
   assembledBaskets: number; setAssembledBaskets: (n: number) => void;
   canEdit: boolean;
 }> = ({ inventory, setInventory, basketConfig, setBasketConfig, assembledBaskets, setAssembledBaskets, canEdit }) => {
+  const guard = () => {
+    if (!canEdit) {
+      alert('Apenas administradores podem alterar dados.');
+      return false;
+    }
+    return true;
+  };
+
   const [selectedItem, setSelectedItem] = useState('');
   
   const stats = useMemo(() => {
