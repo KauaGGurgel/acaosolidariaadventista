@@ -574,12 +574,15 @@ const MessagesManager: React.FC<{ canEdit: boolean }> = ({ canEdit }) => {
   );
 };
 
-const BasketCalculator: React.FC<{ 
-  inventory: InventoryItem[]; setInventory: (i: InventoryItem[]) => void;
-  basketConfig: BasketConfig; setBasketConfig: (c: BasketConfig) => void;
-  assembledBaskets: number; setAssembledBaskets: (n: number) => void;
+const BasketCalculator: React.FC<{
+  inventory: InventoryItem[];
+  setInventory: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
+  basketConfig: BasketConfig;
+  setBasketConfig: React.Dispatch<React.SetStateAction<BasketConfig>>;
+  baskets: number;
+  setBaskets: React.Dispatch<React.SetStateAction<number>>;
   canEdit: boolean;
-}> = ({ inventory, setInventory, basketConfig, setBasketConfig, assembledBaskets, setAssembledBaskets, canEdit }) => {
+}> = ({ inventory, setInventory, basketConfig, setBasketConfig, baskets, setBaskets, canEdit }) => {
   const guard = () => {
     if (!canEdit) {
       alert('Apenas administradores podem alterar dados.');
@@ -609,7 +612,7 @@ const BasketCalculator: React.FC<{
       return ci ? { ...invItem, quantity: invItem.quantity - ci.quantityRequired } : invItem;
     });
     setInventory(newInv);
-    setAssembledBaskets(assembledBaskets + 1);
+    setBaskets(baskets + 1);
   };
 
   return (
@@ -643,7 +646,7 @@ const BasketCalculator: React.FC<{
           <div className="grid grid-cols-2 gap-4">
              <div className="bg-white p-4 rounded-xl border shadow-sm">
                 <div className="text-xs text-slate-500 uppercase">Cestas Prontas</div>
-                <div className="text-4xl font-bold text-slate-800 flex justify-between items-end">{assembledBaskets} <Package className="text-blue-500"/></div>
+                <div className="text-4xl font-bold text-slate-800 flex justify-between items-end">{baskets} <Package className="text-blue-500"/></div>
              </div>
              <div className="bg-white p-4 rounded-xl border shadow-sm">
                 <div className="text-xs text-slate-500 uppercase">Pode Montar</div>
@@ -658,7 +661,7 @@ const BasketCalculator: React.FC<{
   );
 };
 
-const AiAssistant: React.FC<{ inventory: InventoryItem[]; people: Person[] }> = ({ inventory, people }) => {
+const AIAssistant: React.FC<{ inventory: InventoryItem[]; people: Person[]; canEdit: boolean }> = ({ inventory, people, canEdit }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState('');
   const [personId, setPersonId] = useState('');
@@ -677,6 +680,11 @@ const AiAssistant: React.FC<{ inventory: InventoryItem[]; people: Person[] }> = 
   return (
     <div className="p-6">
        <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Sparkles className="text-yellow-500"/> Assistente IA</h2>
+       {!canEdit && (
+          <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm">
+            Você está em modo somente leitura. Apenas admins podem salvar/alterar dados.
+          </div>
+       )}
        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-4">
              <div className="bg-white p-4 rounded-xl border space-y-4">
@@ -851,7 +859,7 @@ export default function App() {
             {view === 'messages' && <MessagesManager canEdit={isAuthorized} />}
             {view === 'people' && <PeopleManager people={people} setPeople={setPeople} canEdit={isAuthorized} />}
             {view === 'baskets' && <BasketCalculator inventory={inventory} setInventory={setInventory} baskets={baskets} setBaskets={setBaskets} basketConfig={basketConfig} setBasketConfig={setBasketConfig} canEdit={isAuthorized} />}
-            {view === 'ai-assistant' && <AIAssistant canEdit={isAuthorized} />}
+            {view === 'ai-assistant' && <AIAssistant inventory={inventory} people={people} canEdit={isAuthorized} />}
 
          </main>
       </div>
