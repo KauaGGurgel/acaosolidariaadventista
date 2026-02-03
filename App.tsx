@@ -48,7 +48,7 @@ export interface DeliveryEvent {
   description?: string;
 }
 
-export type ViewState = 'dashboard' | 'inventory' | 'events' | 'messages' | 'people' | 'baskets' | 'ai-assistant';
+export type ViewState = 'dashboard' | 'inventory' | 'events' | 'messages' | 'people' | 'baskets' | 'ai-assistant' | 'users';
 
 // ==========================================
 // 2. SERVIÇOS (SUPABASE & GEMINI)
@@ -69,6 +69,17 @@ const isSupabaseConfigured = () => !!supabase;
 const generateSpiritualMessage = async (_familyContext: string): Promise<string> => {
   return "Deus é o nosso refúgio e fortaleza. (Modo Offline)";
 };
+
+export type UserRole = 'admin' | 'editor' | 'viewer';
+
+export interface Profile {
+  id: string;
+  email: string;
+  role: UserRole;
+  created_at?: string;
+  updated_at?: string;
+}
+
 
 const suggestRecipe = async (_inventory: InventoryItem[]): Promise<string> => {
   return "Sugestão de receita indisponível no momento. (Modo Offline)";
@@ -95,7 +106,7 @@ const Sidebar: React.FC<{
     { id: 'ai-assistant', label: 'Assistente ASA', icon: HeartHandshake },
   ];
   const logoUrl = "/asa-logo.jpg";
-
+}
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsOpen(false)} />}
@@ -108,6 +119,18 @@ const Sidebar: React.FC<{
             <div><h1 className="font-bold">ASA</h1><p className="text-xs text-slate-400">Gestão</p></div>
           </div>
           <button onClick={() => setIsOpen(false)} className="md:hidden"><X size={24} /></button>
+        {isAdmin && (
+          <button
+            onClick={()=>{setCurrentView('users'); setIsOpen(false);}}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              currentView==='users' ? 'bg-blue-600 text-white shadow' : 'hover:bg-slate-100 text-slate-700'
+            }`}
+          >
+            <Users size={20} />
+            <span className="font-medium">Usuários</span>
+          </button>
+        )}
+
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => {
@@ -123,7 +146,6 @@ const Sidebar: React.FC<{
       </div>
     </>
   );
-};
 
 const Dashboard: React.FC<{
   people: Person[];
@@ -165,7 +187,7 @@ const Dashboard: React.FC<{
     setEvents(prev => prev.filter(e => e.id !== id));
     if (isSupabaseConfigured() && supabase) await supabase.from('eventos_entrega').delete().eq('id', id);
   };
-
+}
   const StatCard = ({ title, value, sub, icon: Icon, color }: any) => (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
       <div className="flex justify-between items-start">
@@ -174,7 +196,7 @@ const Dashboard: React.FC<{
       </div>
     </div>
   );
-
+  
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2><button onClick={() => setIsEventModalOpen(true)} className="bg-white border px-4 py-2 rounded-lg flex gap-2 text-sm shadow-sm hover:bg-slate-50"><Plus size={16} /> Agendar</button></div>
@@ -208,7 +230,6 @@ const Dashboard: React.FC<{
       )}
     </div>
   );
-};
 
 const PeopleManager: React.FC<{ people: Person[]; setPeople: React.Dispatch<React.SetStateAction<Person[]>>; canEdit: boolean; }> = ({ people, setPeople, canEdit }) => {
   const guard = () => {
@@ -574,6 +595,89 @@ const MessagesManager: React.FC<{ canEdit: boolean }> = ({ canEdit }) => {
   );
 };
 
+function UsersManager({
+  profiles,
+  loading,
+  error,
+  onRefresh,
+  onUpdateRole,
+}: {
+  profiles: Profile[];
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  onUpdateRole: (id: string, role: UserRole) => void;
+}) {
+  return (
+    <div className="p-4 md:p-8 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold">Usuários</h2>
+          <p className="text-slate-600">
+            Defina quem pode <b>editar</b> ou apenas <b>visualizar</b>.
+          </p>
+        </div>
+        <button
+          onClick={onRefresh}
+          className="px-4 py-2 rounded-lg bg-slate-900 text-white font-semibold"
+        >
+          Recarregar
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3">
+          {error}
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+          <div className="font-semibold">Lista de contas</div>
+          {loading && (
+            <div className="text-sm text-slate-600 inline-flex items-center gap-2">
+              <Loader2 className="animate-spin" size={16} /> Carregando...
+            </div>
+          )}
+        </div>
+
+        <div className="divide-y divide-slate-200">
+          {profiles.length === 0 && !loading && (
+            <div className="p-4 text-slate-600">Nenhuma conta encontrada.</div>
+          )}
+
+          {profiles.map((p) => (
+            <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+              <div>
+                <div className="font-semibold">{p.email || p.id}</div>
+                <div className="text-xs text-slate-500">ID: {p.id}</div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-slate-600">Permissão:</label>
+                <select
+                  value={p.role}
+                  onChange={(e) => onUpdateRole(p.id, e.target.value as UserRole)}
+                  className="border border-slate-300 rounded-lg px-3 py-2"
+                >
+                  <option value="viewer">Somente visualizar</option>
+                  <option value="editor">Pode editar</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="text-xs text-slate-500">
+        Dica: novos usuários entram como <b>Somente visualizar</b>. Depois, um admin altera para <b>Pode editar</b>.
+      </div>
+    </div>
+  );
+}
+
+
 const BasketCalculator: React.FC<{
   inventory: InventoryItem[];
   setInventory: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
@@ -717,6 +821,11 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [profileRole, setProfileRole] = useState<UserRole>('viewer');
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [rolesBusy, setRolesBusy] = useState(false);
+  const [rolesError, setRolesError] = useState<string | null>(null);
 
   const adminEmails = useMemo(
     () =>
@@ -734,6 +843,78 @@ export default function App() {
     const userEmail = String(session.user?.email || '').toLowerCase();
     return !!userEmail && adminEmails.includes(userEmail);
   }, [adminEmails, session]);
+
+
+  const canEdit = useMemo(() => {
+    if (isAuthorized) return true;
+    return profileRole === 'admin' || profileRole === 'editor';
+  }, [isAuthorized, profileRole]);
+
+  const ensureProfile = async (sess: any) => {
+    if (!supabase || !sess?.user?.id) return;
+    const uid = String(sess.user.id);
+    const uEmail = String(sess.user.email || '').toLowerCase();
+
+    if (isAuthorized) {
+      setProfileRole('admin');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id,email,role')
+      .eq('id', uid)
+      .maybeSingle();
+
+    if (error) {
+      setProfileRole('viewer');
+      return;
+    }
+
+    if (!data) {
+      const { error: insErr } = await supabase.from('profiles').insert({
+        id: uid,
+        email: uEmail,
+        role: 'viewer',
+      });
+      if (!insErr) setProfileRole('viewer');
+      return;
+    }
+
+    setProfileRole((data.role as UserRole) || 'viewer');
+  };
+
+  const loadProfiles = async () => {
+    if (!supabase) return;
+    setRolesError(null);
+    setRolesBusy(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id,email,role,created_at,updated_at')
+      .order('email', { ascending: true });
+    setRolesBusy(false);
+    if (error) {
+      setRolesError(error.message);
+      return;
+    }
+    setProfiles((data || []) as Profile[]);
+  };
+
+  const updateUserRole = async (id: string, role: UserRole) => {
+    if (!supabase) return;
+    setRolesError(null);
+    setRolesBusy(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    setRolesBusy(false);
+    if (error) {
+      setRolesError(error.message);
+      return;
+    }
+    setProfiles((prev) => prev.map((p) => (p.id === id ? { ...p, role } : p)));
+  };
 
   useEffect(() => {
     if (!supabase) {
@@ -753,6 +934,12 @@ export default function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+
+  useEffect(() => {
+    if (!session) return;
+    ensureProfile(session);
+  }, [session, isAuthorized]);
+
   const login = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -762,6 +949,28 @@ export default function App() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setAuthBusy(false);
     if (error) setAuthError(error.message);
+  };
+
+
+  const signup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (!supabase) return;
+
+    setAuthBusy(true);
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    setAuthBusy(false);
+
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+
+    if (data?.user?.id) {
+      const uid = String(data.user.id);
+      const uEmail = String(data.user.email || email).toLowerCase();
+      await supabase.from('profiles').upsert({ id: uid, email: uEmail, role: 'viewer' });
+    }
   };
 
   const logout = async () => {
@@ -776,6 +985,14 @@ export default function App() {
   const [baskets, setBaskets] = useState(0);
   const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: 'Padrão', items: [] });
   const [loading, setLoading] = useState(true);
+
+
+  useEffect(() => {
+    if (view === 'users' && isAuthorized) {
+      loadProfiles();
+    }
+  }, [view, isAuthorized]);
+
 
   // Inicialização
   useEffect(() => {
@@ -811,10 +1028,42 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 border border-slate-200">
-          <h1 className="text-2xl font-bold text-slate-900">Entrar</h1>
-          <p className="text-slate-600 mt-1">Acesso restrito ao painel ASA.</p>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-2xl font-bold text-slate-900">
+              {authMode === 'login' ? 'Entrar' : 'Criar conta'}
+            </h1>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setAuthMode('login')}
+                className={
+                  authMode === 'login'
+                    ? "px-3 py-1 text-sm font-semibold bg-slate-900 text-white"
+                    : "px-3 py-1 text-sm font-semibold bg-white text-slate-700 hover:bg-slate-50"
+                }
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMode('signup')}
+                className={
+                  authMode === 'signup'
+                    ? "px-3 py-1 text-sm font-semibold bg-slate-900 text-white"
+                    : "px-3 py-1 text-sm font-semibold bg-white text-slate-700 hover:bg-slate-50"
+                }
+              >
+                Criar conta
+              </button>
+            </div>
+          </div>
+          <p className="text-slate-600 mt-1">
+            {authMode === 'login'
+              ? "Acesso restrito ao painel ASA."
+              : "Crie uma conta para acessar. Por padrão, você entra como 'somente leitura' até um admin liberar edição."}
+          </p>
 
-          <form onSubmit={login} className="mt-6 space-y-4">
+          <form onSubmit={authMode === 'login' ? login : signup} className="mt-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700">E-mail</label>
               <input type="email" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={email} onChange={(e)=>setEmail(e.target.value)} required />
@@ -843,7 +1092,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
-      <Sidebar currentView={view} setCurrentView={setView} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+      <Sidebar currentView={view} setCurrentView={setView} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} isAdmin={isAuthorized} />
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
          <header className="md:hidden bg-blue-900 text-white p-4 flex justify-between items-center shadow">
             <div className="flex items-center gap-2 font-bold"><img src="/asa-logo.jpg" alt="ASA" className="h-7 w-7 rounded bg-white p-0.5 object-contain" /><span>ASA Gestão</span></div>
@@ -853,13 +1102,14 @@ export default function App() {
             </div>
          </header>
          <main className="flex-1 overflow-y-auto">
-            {view === 'dashboard' && <Dashboard people={people} inventory={inventory} events={events} setEvents={setEvents} canEdit={isAuthorized} />}
-            {view === 'inventory' && <InventoryManager inventory={inventory} setInventory={setInventory} canEdit={isAuthorized} />}
-            {view === 'events' && <EventsManager events={events} setEvents={setEvents} canEdit={isAuthorized} />}
-            {view === 'messages' && <MessagesManager canEdit={isAuthorized} />}
-            {view === 'people' && <PeopleManager people={people} setPeople={setPeople} canEdit={isAuthorized} />}
-            {view === 'baskets' && <BasketCalculator inventory={inventory} setInventory={setInventory} baskets={baskets} setBaskets={setBaskets} basketConfig={basketConfig} setBasketConfig={setBasketConfig} canEdit={isAuthorized} />}
-            {view === 'ai-assistant' && <AIAssistant inventory={inventory} people={people} canEdit={isAuthorized} />}
+            {view === 'dashboard' && <Dashboard people={people} inventory={inventory} events={events} setEvents={setEvents} canEdit={canEdit} />}
+            {view === 'inventory' && <InventoryManager inventory={inventory} setInventory={setInventory} canEdit={canEdit} />}
+            {view === 'events' && <EventsManager events={events} setEvents={setEvents} canEdit={canEdit} />}
+            {view === 'messages' && <MessagesManager canEdit={canEdit} />}
+            {view === 'people' && <PeopleManager people={people} setPeople={setPeople} canEdit={canEdit} />}
+            {view === 'baskets' && <BasketCalculator inventory={inventory} setInventory={setInventory} baskets={baskets} setBaskets={setBaskets} basketConfig={basketConfig} setBasketConfig={setBasketConfig} canEdit={canEdit} />}
+            {view === 'users' && isAuthorized && <UsersManager profiles={profiles} loading={rolesBusy} error={rolesError} onRefresh={loadProfiles} onUpdateRole={updateUserRole} />}
+            {view === 'ai-assistant' && <AIAssistant inventory={inventory} people={people} canEdit={canEdit} />}
 
          </main>
       </div>
