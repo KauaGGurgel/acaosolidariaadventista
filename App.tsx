@@ -65,9 +65,7 @@ function SidebarButton({
           : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
       )}
     >
-      <span className={cn(active ? "text-white" : "text-slate-700")}>
-        {icon}
-      </span>
+      <span className={cn(active ? "text-white" : "text-slate-700")}>{icon}</span>
       <span className="font-medium">{label}</span>
     </button>
   );
@@ -103,6 +101,7 @@ function Badge({ children }: { children: React.ReactNode }) {
 
 async function fetchMyProfile(): Promise<Profile | null> {
   if (!supabase) return null;
+
   const { data: userData } = await supabase.auth.getUser();
   const user = userData?.user;
   if (!user) return null;
@@ -131,6 +130,7 @@ async function fetchMyProfile(): Promise<Profile | null> {
     // se o RLS bloquear, ainda dá pra seguir como viewer
     return { id: user.id, email, role: "viewer" };
   }
+
   return { id: user.id, email, role: "viewer" };
 }
 
@@ -148,6 +148,7 @@ export default function App() {
 
   // -------- Profile / permissions --------
   const [profile, setProfile] = useState<Profile | null>(null);
+
   const adminEmails = useMemo(
     () =>
       (import.meta.env.VITE_ADMIN_EMAILS || "")
@@ -196,6 +197,7 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       if (!supabase || !session) {
         setProfile(null);
@@ -204,16 +206,11 @@ export default function App() {
       const p = await fetchMyProfile();
       if (!cancelled) setProfile(p);
     })();
+
     return () => {
       cancelled = true;
     };
   }, [session]);
-
-
-
-  // We'll override with a second effect block (kept minimal change).
-
-  // Re-implement profile fetch with correct cleanup
 
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -273,7 +270,32 @@ export default function App() {
     );
   }
 
-  if (isConfigured() && !session) {
+  // Se o Supabase NÃO estiver configurado, mostramos uma mensagem clara.
+  if (!isConfigured()) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow p-6 border border-slate-200">
+          <div className="text-xl font-bold text-slate-900">Sistema ASA</div>
+          <div className="mt-2 text-slate-700">
+            Falta configurar as variáveis do Supabase no Netlify:
+          </div>
+          <div className="mt-3 text-sm bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <div>
+              <b>VITE_SUPABASE_URL</b>
+            </div>
+            <div>
+              <b>VITE_SUPABASE_ANON_KEY</b>
+            </div>
+            <div className="mt-2 text-slate-600">
+              Depois disso, faça um novo deploy.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 border border-slate-200">
@@ -282,7 +304,9 @@ export default function App() {
               src="/asa-logo.jpg"
               alt="ASA"
               className="h-10 w-10 rounded-lg object-contain"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+              onError={(e) =>
+                (((e.currentTarget as HTMLImageElement).style.display = "none"))
+              }
             />
             <div>
               <div className="text-xl font-bold text-slate-900">Sistema ASA</div>
@@ -290,8 +314,10 @@ export default function App() {
             </div>
           </div>
 
+          {/* Abas (Login / Criar conta) */}
           <div className="mt-5 flex gap-2">
             <button
+              type="button"
               onClick={() => setAuthTab("login")}
               className={cn(
                 "flex-1 rounded-lg border px-3 py-2 font-semibold",
@@ -303,6 +329,7 @@ export default function App() {
               Login
             </button>
             <button
+              type="button"
               onClick={() => setAuthTab("signup")}
               className={cn(
                 "flex-1 rounded-lg border px-3 py-2 font-semibold",
@@ -365,6 +392,33 @@ export default function App() {
                 : "Criar conta"}
             </button>
 
+            {/* Fallback: link textual (caso alguém não perceba as abas) */}
+            <div className="text-center text-sm text-slate-600">
+              {authTab === "login" ? (
+                <>
+                  Não tem conta?{" "}
+                  <button
+                    type="button"
+                    className="font-semibold text-slate-900 underline"
+                    onClick={() => setAuthTab("signup")}
+                  >
+                    Criar conta
+                  </button>
+                </>
+              ) : (
+                <>
+                  Já tem conta?{" "}
+                  <button
+                    type="button"
+                    className="font-semibold text-slate-900 underline"
+                    onClick={() => setAuthTab("login")}
+                  >
+                    Fazer login
+                  </button>
+                </>
+              )}
+            </div>
+
             <div className="text-xs text-slate-500">
               Permissões: novos usuários entram como <b>Somente visualizar</b>. Um
               admin pode promover para <b>Pode editar</b>.
@@ -388,7 +442,9 @@ export default function App() {
               src="/asa-logo.jpg"
               alt="ASA"
               className="h-9 w-9 rounded-lg object-contain"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+              onError={(e) =>
+                (((e.currentTarget as HTMLImageElement).style.display = "none"))
+              }
             />
             <div>
               <div className="text-lg font-bold text-slate-900">ASA</div>
@@ -416,7 +472,9 @@ export default function App() {
               src="/asa-logo.jpg"
               alt="ASA"
               className="h-9 w-9 rounded-lg object-contain"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+              onError={(e) =>
+                (((e.currentTarget as HTMLImageElement).style.display = "none"))
+              }
             />
             <div>
               <div className="font-bold text-slate-900 leading-tight">Sistema ASA</div>
@@ -490,7 +548,10 @@ export default function App() {
           )}
 
           {view === "beneficiarios" && (
-            <Card title="Beneficiários" right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}>
+            <Card
+              title="Beneficiários"
+              right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+            >
               <div className="text-slate-700">
                 Tela de beneficiários (cadastro/lista) — posso ligar ao Supabase
                 nas tabelas <b>beneficiarios</b>.
@@ -499,7 +560,10 @@ export default function App() {
           )}
 
           {view === "estoque" && (
-            <Card title="Estoque" right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}>
+            <Card
+              title="Estoque"
+              right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+            >
               <div className="text-slate-700">
                 Tela de estoque — posso ligar ao Supabase na tabela <b>estoque</b>.
               </div>
@@ -507,7 +571,10 @@ export default function App() {
           )}
 
           {view === "eventos" && (
-            <Card title="Eventos / Entregas" right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}>
+            <Card
+              title="Eventos / Entregas"
+              right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+            >
               <div className="text-slate-700">
                 Tela de eventos — posso ligar ao Supabase na tabela <b>eventos_entrega</b>.
               </div>
@@ -524,7 +591,10 @@ export default function App() {
           )}
 
           {view === "cestas" && (
-            <Card title="Cestas Básicas" right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}>
+            <Card
+              title="Cestas Básicas"
+              right={!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+            >
               <div className="text-slate-700">
                 Gerenciador de cestas. IA (Gemini) só via Netlify Function (backend),
                 não no front-end.
@@ -558,21 +628,27 @@ function UsersAdmin({ onRoleChanged }: { onRoleChanged: () => void }) {
   const load = async () => {
     setErr(null);
     if (!supabase) return;
+
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("id,email,role")
+      .select("id,email,role,created_at")
       .order("created_at", { ascending: false });
+
     setLoading(false);
+
     if (error) {
       setErr(error.message);
       return;
     }
-    setRows((data as any[])?.map((r) => ({
-      id: String(r.id),
-      email: (r.email as string | null) ?? null,
-      role: (r.role as Role) ?? "viewer",
-    })) ?? []);
+
+    setRows(
+      ((data as any[]) || []).map((r) => ({
+        id: String(r.id),
+        email: (r.email as string | null) ?? null,
+        role: (r.role as Role) ?? "viewer",
+      }))
+    );
   };
 
   useEffect(() => {
@@ -582,13 +658,16 @@ function UsersAdmin({ onRoleChanged }: { onRoleChanged: () => void }) {
   const setRole = async (id: string, role: Role) => {
     setErr(null);
     if (!supabase) return;
+
     setLoading(true);
     const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
     setLoading(false);
+
     if (error) {
       setErr(error.message);
       return;
     }
+
     await load();
     onRoleChanged();
   };
