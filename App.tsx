@@ -674,7 +674,7 @@ export default function App() {
               <div className="text-lg font-bold text-slate-900">ASA</div>
               <div className="text-xs text-slate-600">
                 {emailDisplay} • <Badge>{isAdmin ? "admin" : roleDisplay}</Badge>{" "}
-                {!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+                {!canEdit ? <Badge>somente leitura</Badge> : null}
               </div>
             </div>
           </div>
@@ -975,10 +975,10 @@ function BeneficiariosTab({
 
   return (
     <Card
-      title="Beneficiários (Supabase: public.beneficiarios)"
+      title="Beneficiários"
       right={
         <div className="flex items-center gap-2">
-          {!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+          {!canEdit ? <Badge>somente leitura</Badge> : null}
           {canEdit && (
             <Button onClick={startNew}>
               <Plus size={16} /> Novo
@@ -1154,10 +1154,10 @@ function EstoqueTab({
 
   return (
     <Card
-      title="Estoque (Supabase: public.estoque)"
+      title="Estoque"
       right={
         <div className="flex items-center gap-2">
-          {!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+          {!canEdit ? <Badge>somente leitura</Badge> : null}
           {canEdit && (
             <Button onClick={startNew}>
               <Plus size={16} /> Novo
@@ -1339,10 +1339,10 @@ function EventosTab({
 
   return (
     <Card
-      title="Eventos / Entregas (Supabase: public.eventos_entrega)"
+      title="Eventos / Entregas"
       right={
         <div className="flex items-center gap-2">
-          {!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+          {!canEdit ? <Badge>somente leitura</Badge> : null}
           {canEdit && (
             <Button onClick={startNew}>
               <Plus size={16} /> Novo
@@ -1475,12 +1475,12 @@ function MensagensTab({
   };
 
   return (
-    <Card title="Mensagens (Supabase: public.mensagens — opcional)">
+    <Card title="Mensagens">
       <div className="flex items-center justify-between gap-3 mb-3">
         <div className="text-sm text-slate-600">
           {messages.length === 0 ? "Sem mensagens ainda." : `${messages.length} mensagem(ns)`}
         </div>
-        {!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+        {!canEdit ? <Badge>somente leitura</Badge> : null}
       </div>
 
       {canEdit && (
@@ -1581,10 +1581,10 @@ function CestasTab({
 
   return (
     <Card
-      title="Cestas Básicas (Supabase: public.configuracoes)"
+      title="Cestas Básicas"
       right={
         <div className="flex items-center gap-2">
-          {!canEdit ? <Badge>somente leitura</Badge> : <Badge>pode editar</Badge>}
+          {!canEdit ? <Badge>somente leitura</Badge> : null}
           {canEdit && (
             <Button onClick={saveConfig} disabled={saving}>
               {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
@@ -1737,7 +1737,7 @@ function UsersAdmin({ onRoleChanged }: { onRoleChanged: () => void }) {
 
   return (
     <Card
-      title="Usuários (admin) — Supabase: public.profiles"
+      title="Usuários (admin)"
       right={
         <Button variant="secondary" onClick={load}>
           <RefreshCw size={16} /> Recarregar
