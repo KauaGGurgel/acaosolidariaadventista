@@ -3,11 +3,13 @@ import type React from 'react';
 import { createClient } from '@supabase/supabase-js';
 import {
   AlertTriangle,
-  BarChart3,
+  ArrowRight,
   Calendar,
+  Calculator,
   CheckCircle,
   Edit2,
   HeartHandshake,
+  LayoutDashboard,
   Loader2,
   MapPin,
   Menu,
@@ -19,6 +21,7 @@ import {
   Search,
   ShoppingBasket,
   Trash2,
+  TrendingUp,
   Users,
   X,
 } from 'lucide-react';
