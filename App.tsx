@@ -1,597 +1,1112 @@
-import { useEffect, useMemo, useState } from 'react';
-import type React from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useEffect, useMemo, useState } from "react";
+import { createClient, type Session } from "@supabase/supabase-js";
 import {
-  AlertTriangle,
-  ArrowRight,
-  Calendar,
-  Calculator,
-  CheckCircle,
-  Edit2,
-  HeartHandshake,
   LayoutDashboard,
-  Loader2,
-  MapPin,
-  Menu,
-  MinusCircle,
-  Package,
-  Phone,
-  Plus,
-  PlusCircle,
-  Search,
-  ShoppingBasket,
-  Trash2,
-  TrendingUp,
   Users,
-  X,
-} from 'lucide-react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+  Package,
+  CalendarDays,
+  Boxes,
+  Settings,
+  LogOut,
+  Loader2,
+  Plus,
+  Trash2,
+  Pencil,
+  AlertTriangle,
+} from "lucide-react";
 
-// ==========================================
-// 1. TIPOS E INTERFACES
-// ==========================================
-export interface DeliveryRecord {
-  date: string;
-  note?: string;
-}
+/**
+ * ✅ Regras deste App.tsx
+ * - Login + Criar conta (Supabase Auth)
+ * - Roles via tabela public.profiles (viewer/editor/admin)
+ * - Abas: Dashboard, Estoque, Eventos, Beneficiários, Cestas
+ * - Estoque: CRUD + categorias detalhadas + alertas (views alertas_validade / alertas_minimo)
+ * - Sem “Assistente” e sem “Mensagens”
+ *
+ * ENV no Netlify:
+ * - VITE_SUPABASE_URL
+ * - VITE_SUPABASE_ANON_KEY
+ * - VITE_ADMIN_EMAILS (opcional: emails separados por vírgula para forçar admin no front)
+ */
 
-export interface Person {
+type Role = "viewer" | "editor" | "admin";
+type ViewKey = "dashboard" | "estoque" | "eventos" | "beneficiarios" | "cestas" | "usuarios";
+
+type Profile = {
   id: string;
+  email: string | null;
+  role: Role;
+};
+
+type Beneficiario = {
+  id: string; // TEXT (conforme seu SQL)
   name: string;
   familySize: number;
   address: string;
   phone: string;
-  lastBasketDate?: string;
-  notes?: string;
-  history?: DeliveryRecord[];
-}
+  lastBasketDate: string | null;
+  notes: string | null;
+  history: any[];
+  created_at: string;
+};
 
-export interface InventoryItem {
-  id: string;
-  name: string;
-  quantity: number;
-  unit: 'kg' | 'unidade' | 'litro' | 'pacote';
-  category:
-    | 'alimento_perecivel'
-    | 'alimento_nao_perecivel'
-    | 'higiene'
-    | 'roupa_masculina'
-    | 'roupa_feminina'
-    | 'roupa_infantil'
-    | 'outros';
-  minThreshold: number;
-}
+type EstoqueItem = {
+  id: string; // UUID
+  nome: string | null;
+  categoria: string | null;
+  quantidade: number;
+  unidade: string;
+  validade: string | null; // date em string YYYY-MM-DD
+  status_conservacao: string | null;
+  codigo_barras: string | null;
+  minimo_alerta: number | null;
+  data_entrada: string | null;
+  status: string;
+  observacoes: string | null;
+  created_at: string | null;
+};
 
-export interface BasketItemConfig {
-  itemId: string;
-  quantityRequired: number;
-}
-
-export interface BasketConfig {
-  name: string;
-  items: BasketItemConfig[];
-}
-
-export interface DeliveryEvent {
-  id: string;
+type Evento = {
+  id: string; // TEXT
   title: string;
   date: string; // YYYY-MM-DD
-  description?: string;
-}
-
-export type ViewState = 'dashboard' | 'people' | 'inventory' | 'baskets';
-
-// ==========================================
-// 2. SERVIÇOS (SUPABASE & GEMINI)
-// ==========================================
-
-// --- SUPABASE SETUP ---
-const getEnv = (key: string) => {
-  try { return (process.env as any)[key]; } catch (e) { return ''; }
+  description: string | null;
+  created_at: string;
 };
 
-const SUPABASE_URL = getEnv('VITE_SUPABASE_URL') || '';
-const SUPABASE_ANON_KEY = getEnv('VITE_SUPABASE_ANON_KEY') || '';
-const isValidConfig = SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 0;
-const supabase = isValidConfig ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
-const isSupabaseConfigured = () => !!supabase;
+type AlertValidade = {
+  id: string;
+  nome: string;
+  categoria: string;
+  validade: string;
+  dias_para_vencer: number;
+};
 
-// ==========================================
-// 3. SUB-COMPONENTES
-// ==========================================
+type AlertMinimo = {
+  id: string;
+  nome: string;
+  categoria: string;
+  quantidade: number;
+  minimo: number;
+  falta_para_minimo: number;
+};
 
-function Sidebar({
-  currentView,
-  setCurrentView,
-  isOpen,
-  setIsOpen,
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnon = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+const supabase =
+  supabaseUrl && supabaseAnon ? createClient(supabaseUrl, supabaseAnon) : null;
+
+function cn(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
+
+function Badge({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+      {children}
+    </span>
+  );
+}
+
+function Card({
+  title,
+  children,
+  right,
 }: {
-  currentView: ViewState;
-  setCurrentView: (view: ViewState) => void;
-  isOpen: boolean;
-  setIsOpen: (isOpen: boolean) => void;
+  title: string;
+  children: React.ReactNode;
+  right?: React.ReactNode;
 }) {
-  const [imgError, setImgError] = useState(false);
-  const menuItems = [
-    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-    { id: 'people', label: 'Beneficiários', icon: Users },
-    { id: 'inventory', label: 'Estoque', icon: Package },
-    { id: 'baskets', label: 'Cestas Básicas', icon: ShoppingBasket },
-  ];
-  const logoUrl = "https://www.adventistas.org/pt/asa/wp-content/uploads/sites/6/2013/05/logo_asa_cor.png";
-
   return (
-    <>
-      {isOpen && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setIsOpen(false)} />}
-      <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-slate-900 text-white transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 flex flex-col h-full border-r border-slate-700 shadow-xl`}>
-        <div className="p-6 flex items-center justify-between border-b border-slate-700 bg-slate-950">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white rounded flex items-center justify-center p-1">
-               {!imgError ? <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" onError={() => setImgError(true)} /> : <HeartHandshake className="text-yellow-500" />}
-            </div>
-            <div><h1 className="font-bold">ASA</h1><p className="text-xs text-slate-400">Gestão</p></div>
-          </div>
-          <button onClick={() => setIsOpen(false)} className="md:hidden"><X size={24} /></button>
-        </div>
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentView === item.id;
-            return (
-              <button key={item.id} onClick={() => { setCurrentView(item.id as ViewState); setIsOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${isActive ? 'bg-blue-900 text-yellow-400 font-medium' : 'text-slate-300 hover:bg-slate-800'}`}>
-                <Icon size={20} /><span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div className="font-semibold text-slate-900">{title}</div>
+        {right}
       </div>
-    </>
+      <div className="p-4">{children}</div>
+    </div>
   );
 }
 
-const Dashboard: React.FC<{
-  people: Person[];
-  inventory: InventoryItem[];
-  events: DeliveryEvent[];
-  setEvents: React.Dispatch<React.SetStateAction<DeliveryEvent[]>>;
-}> = ({ people, inventory, events, setEvents }) => {
-  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
-  const [newEvent, setNewEvent] = useState({ title: '', date: '', desc: '' });
-
-  const totalFamilies = people.length;
-  const totalBeneficiaries = people.reduce((acc, curr) => acc + curr.familySize, 0);
-  const totalItems = inventory.reduce((acc, curr) => acc + curr.quantity, 0);
-  const lowStock = inventory.filter(i => i.quantity <= i.minThreshold);
-  const today = new Date().toISOString().split('T')[0];
-  const upcoming = events.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date));
-
-  const handleAddEvent = async () => {
-    if (!newEvent.title || !newEvent.date) return;
-    const evt: DeliveryEvent = { id: Date.now().toString(), title: newEvent.title, date: newEvent.date, description: newEvent.desc };
-    setEvents(prev => [...prev, evt]);
-    if (isSupabaseConfigured() && supabase) await supabase.from('eventos_entrega').insert(evt);
-    setIsEventModalOpen(false); setNewEvent({ title: '', date: '', desc: '' });
-  };
-
-  const handleDeleteEvent = async (id: string) => {
-    if(!window.confirm("Remover evento?")) return;
-    setEvents(prev => prev.filter(e => e.id !== id));
-    if (isSupabaseConfigured() && supabase) await supabase.from('eventos_entrega').delete().eq('id', id);
-  };
-
-  const StatCard = ({ title, value, sub, icon: Icon, color }: any) => (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-      <div className="flex justify-between items-start">
-        <div><p className="text-slate-500 text-sm font-medium">{title}</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{value}</h3><p className={`text-xs mt-1 ${color}`}>{sub}</p></div>
-        <div className={`p-3 rounded-lg bg-opacity-10 ${color.replace('text-', 'bg-')}`}><Icon className={color} size={24} /></div>
-      </div>
-    </div>
-  );
-
+function SidebarButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2><button onClick={() => setIsEventModalOpen(true)} className="bg-white border px-4 py-2 rounded-lg flex gap-2 text-sm shadow-sm hover:bg-slate-50"><Plus size={16} /> Agendar</button></div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Famílias" value={totalFamilies} sub={`${totalBeneficiaries} pessoas`} icon={Users} color="text-blue-600" />
-        <StatCard title="Estoque" value={totalItems} sub="Unidades totais" icon={Package} color="text-green-600" />
-        <StatCard title="Alertas" value={lowStock.length} sub="Itens acabando" icon={TrendingUp} color="text-red-500" />
-        <StatCard title="Próximo" value={upcoming[0] ? new Date(upcoming[0].date).getDate() : "--"} sub={upcoming[0]?.title || "Nada agendado"} icon={Calendar} color="text-yellow-600" />
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80">
-           <h3 className="font-bold mb-4">Estoque Principal</h3>
-           <ResponsiveContainer width="100%" height="100%"><BarChart data={inventory.slice(0,5)}><CartesianGrid strokeDasharray="3 3" vertical={false}/><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="quantity" fill="#1e3a8a"/></BarChart></ResponsiveContainer>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 overflow-y-auto h-80">
-           <h3 className="font-bold mb-4">Eventos e Alertas</h3>
-           {lowStock.map(i => <div key={i.id} className="p-2 bg-red-50 border border-red-100 rounded mb-2 text-sm flex justify-between"><span className="text-red-800 font-bold">{i.name}</span><span className="text-red-600">Restam {i.quantity}</span></div>)}
-           {upcoming.map(e => <div key={e.id} className="p-2 bg-yellow-50 border border-yellow-100 rounded mb-2 text-sm flex justify-between group"><div><div className="font-bold text-yellow-900">{e.title}</div><div className="text-xs text-yellow-700">{e.date}</div></div><button onClick={()=>handleDeleteEvent(e.id)} className="opacity-0 group-hover:opacity-100 text-red-500"><Trash2 size={16}/></button></div>)}
-        </div>
-      </div>
-      {isEventModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-xl w-full max-w-md space-y-4">
-            <h3 className="font-bold text-lg">Novo Evento</h3>
-            <input className="w-full border p-2 rounded" placeholder="Título" value={newEvent.title} onChange={e=>setNewEvent({...newEvent, title: e.target.value})} />
-            <input className="w-full border p-2 rounded" type="date" value={newEvent.date} onChange={e=>setNewEvent({...newEvent, date: e.target.value})} />
-            <textarea className="w-full border p-2 rounded" placeholder="Descrição" value={newEvent.desc} onChange={e=>setNewEvent({...newEvent, desc: e.target.value})} />
-            <div className="flex justify-end gap-2"><button onClick={()=>setIsEventModalOpen(false)} className="px-4 py-2 text-slate-600">Cancelar</button><button onClick={handleAddEvent} className="px-4 py-2 bg-blue-900 text-white rounded">Salvar</button></div>
-          </div>
-        </div>
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2 rounded-xl border text-left",
+        active
+          ? "bg-slate-900 text-white border-slate-900"
+          : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
       )}
-    </div>
+    >
+      <span className={cn(active ? "text-white" : "text-slate-700")}>{icon}</span>
+      <span className="font-medium">{label}</span>
+    </button>
   );
-};
+}
 
-const PeopleManager: React.FC<{ people: Person[]; setPeople: React.Dispatch<React.SetStateAction<Person[]>>; }> = ({ people, setPeople }) => {
-  const [modal, setModal] = useState(false);
-  const [formData, setFormData] = useState<Partial<Person>>({});
-  const [searchTerm, setSearchTerm] = useState('');
-  const [deliveryModal, setDeliveryModal] = useState<string | null>(null);
-  const [deliveryData, setDeliveryData] = useState({ date: new Date().toISOString().split('T')[0], note: '' });
+async function fetchMyProfile(): Promise<Profile | null> {
+  if (!supabase) return null;
 
-  const handleSave = async () => {
-    if (!formData.name) return;
-    const newPerson: Person = {
-      id: formData.id || Date.now().toString(),
-      name: formData.name,
-      familySize: formData.familySize || 1,
-      address: formData.address || '',
-      phone: formData.phone || '',
-      notes: formData.notes || '',
-      history: formData.history || [],
-      lastBasketDate: formData.lastBasketDate
+  const { data: userData } = await supabase.auth.getUser();
+  const user = userData?.user;
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id,email,role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!error && data) {
+    return {
+      id: String(data.id),
+      email: (data.email as string | null) ?? user.email ?? null,
+      role: (data.role as Role) ?? "viewer",
     };
-    if (formData.id) {
-       setPeople(prev => prev.map(p => p.id === formData.id ? newPerson : p));
-    } else {
-       setPeople(prev => [...prev, newPerson]);
-    }
-    setModal(false); setFormData({});
+  }
+
+  // fallback: cria perfil se não existir (se RLS bloquear, segue como viewer)
+  const email = user.email ?? null;
+  const { error: insErr } = await supabase.from("profiles").insert({ id: user.id, email, role: "viewer" });
+  if (insErr) return { id: user.id, email, role: "viewer" };
+  return { id: user.id, email, role: "viewer" };
+}
+
+function prettyCat(c?: string | null) {
+  const m: Record<string, string> = {
+    alimento_perecivel: "Alimento (Perecível)",
+    alimento_nao_perecivel: "Alimento (Não perecível)",
+    higiene: "Higiene",
+    roupa_masculina: "Vestimenta (Masculino)",
+    roupa_feminina: "Vestimenta (Feminino)",
+    roupa_infantil: "Vestimenta (Infantil)",
+    movel: "Móveis",
+    outros: "Outros",
   };
+  if (!c) return "-";
+  return m[c] ?? c;
+}
 
-  const handleDelivery = (id: string) => {
-    setPeople(prev => prev.map(p => {
-       if (p.id === id) {
-         return { ...p, lastBasketDate: deliveryData.date, history: [{ date: deliveryData.date, note: deliveryData.note }, ...(p.history || [])] };
-       }
-       return p;
-    }));
-    setDeliveryModal(null); setDeliveryData({ date: new Date().toISOString().split('T')[0], note: '' });
-  };
-
-  const handleDelete = async (id: string) => {
-    if(!window.confirm("Excluir cadastro?")) return;
-    setPeople(prev => prev.filter(p => p.id !== id));
-    if (isSupabaseConfigured() && supabase) await supabase.from('beneficiarios').delete().eq('id', id);
-  };
-
-  return (
-    <div className="p-6">
-      <div className="flex justify-between mb-6">
-        <h2 className="text-2xl font-bold text-slate-800">Beneficiários</h2>
-        <button onClick={() => { setFormData({}); setModal(true); }} className="bg-blue-900 text-white px-4 py-2 rounded-lg flex items-center gap-2"><Plus size={20} /> Cadastrar</button>
-      </div>
-      <div className="mb-4 bg-white p-3 rounded-lg border flex items-center gap-3"><Search className="text-slate-400" /><input placeholder="Buscar..." className="outline-none w-full" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} /></div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {people.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
-          <div key={p.id} className="bg-white p-5 rounded-xl border shadow-sm hover:shadow-md transition-shadow relative group">
-            <div className="flex justify-between items-start mb-3">
-               <div className="flex gap-3 items-center"><div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-bold text-blue-700">{p.name[0]}</div><div><h3 className="font-bold">{p.name}</h3><p className="text-xs text-slate-500">{p.familySize} pessoas</p></div></div>
-               <button onClick={()=>handleDelete(p.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={18}/></button>
-            </div>
-            <div className="text-sm text-slate-600 space-y-1 mb-4">
-               <div className="flex gap-2"><Phone size={14}/> {p.phone}</div>
-               <div className="flex gap-2"><MapPin size={14}/> <span className="truncate">{p.address}</span></div>
-               <div className="flex gap-2"><Calendar size={14}/> Última: {p.lastBasketDate || 'Nunca'}</div>
-            </div>
-            <div className="flex gap-2">
-               <button onClick={()=>{ setFormData(p); setModal(true); }} className="flex-1 py-2 bg-slate-50 border rounded text-sm flex items-center justify-center gap-2 hover:bg-slate-100"><Edit2 size={14}/> Editar</button>
-               <button onClick={()=>setDeliveryModal(p.id)} className="flex-1 py-2 bg-green-50 text-green-700 border border-green-200 rounded text-sm flex items-center justify-center gap-2 hover:bg-green-100"><CheckCircle size={14}/> Entregar</button>
-            </div>
-          </div>
-        ))}
-      </div>
-      {(modal || deliveryModal) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-6 rounded-xl w-full max-w-md space-y-4">
-            {modal ? (
-              <>
-                 <h3 className="font-bold text-lg">{formData.id ? 'Editar' : 'Novo'} Cadastro</h3>
-                 <input className="w-full border p-2 rounded" placeholder="Nome" value={formData.name || ''} onChange={e=>setFormData({...formData, name: e.target.value})} />
-                 <div className="flex gap-2">
-                    <input className="w-full border p-2 rounded" type="number" placeholder="Tamanho Família" value={formData.familySize || ''} onChange={e=>setFormData({...formData, familySize: Number(e.target.value)})} />
-                    <input className="w-full border p-2 rounded" placeholder="Telefone" value={formData.phone || ''} onChange={e=>setFormData({...formData, phone: e.target.value})} />
-                 </div>
-                 <input className="w-full border p-2 rounded" placeholder="Endereço" value={formData.address || ''} onChange={e=>setFormData({...formData, address: e.target.value})} />
-                 <textarea className="w-full border p-2 rounded" placeholder="Observações" value={formData.notes || ''} onChange={e=>setFormData({...formData, notes: e.target.value})} />
-                 <div className="flex justify-end gap-2"><button onClick={()=>setModal(false)} className="px-4 py-2 text-slate-600">Cancelar</button><button onClick={handleSave} className="px-4 py-2 bg-blue-900 text-white rounded">Salvar</button></div>
-              </>
-            ) : (
-              <>
-                 <h3 className="font-bold text-lg">Registrar Entrega</h3>
-                 <input className="w-full border p-2 rounded" type="date" value={deliveryData.date} onChange={e=>setDeliveryData({...deliveryData, date: e.target.value})} />
-                 <textarea className="w-full border p-2 rounded" placeholder="Obs da entrega..." value={deliveryData.note} onChange={e=>setDeliveryData({...deliveryData, note: e.target.value})} />
-                 <div className="flex justify-end gap-2"><button onClick={()=>setDeliveryModal(null)} className="px-4 py-2 text-slate-600">Cancelar</button><button onClick={()=> deliveryModal && handleDelivery(deliveryModal)} className="px-4 py-2 bg-green-600 text-white rounded">Confirmar</button></div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const InventoryManager: React.FC<{ inventory: InventoryItem[]; setInventory: React.Dispatch<React.SetStateAction<InventoryItem[]>>; }> = ({ inventory, setInventory }) => {
-  const [modal, setModal] = useState(false);
-  const [editing, setEditing] = useState<Partial<InventoryItem>>({});
-  const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<InventoryItem['category'] | 'todas'>('todas');
-
-  const categoryLabel = (c: InventoryItem['category']) => {
-    switch (c) {
-      case 'alimento_perecivel':
-        return 'Alimento • Perecível';
-      case 'alimento_nao_perecivel':
-        return 'Alimento • Não perecível';
-      case 'higiene':
-        return 'Higiene';
-      case 'roupa_masculina':
-        return 'Vestuário • Masculino';
-      case 'roupa_feminina':
-        return 'Vestuário • Feminino';
-      case 'roupa_infantil':
-        return 'Vestuário • Infantil';
-      case 'outros':
-        return 'Outros';
-      default:
-        return c;
-    }
-  };
-
-  const handleSave = async () => {
-    if (!editing.name) return;
-    const item: InventoryItem = {
-       id: editing.id || Date.now().toString(),
-       name: editing.name,
-       quantity: editing.quantity || 0,
-       unit: editing.unit || 'kg',
-       category: (editing.category as any) || 'alimento_perecivel',
-       minThreshold: editing.minThreshold || 10
-    };
-    if (editing.id) setInventory(prev => prev.map(i => i.id === editing.id ? item : i));
-    else setInventory(prev => [...prev, item]);
-    setModal(false); setEditing({});
-  };
-
-  const adjustQty = (id: string, delta: number) => {
-    setInventory(prev => prev.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i));
-  };
-
-  const handleDelete = async (id: string) => {
-    if(!window.confirm("Remover item?")) return;
-    setInventory(prev => prev.filter(i => i.id !== id));
-    if (isSupabaseConfigured() && supabase) await supabase.from('estoque').delete().eq('id', id);
-  };
-
-  return (
-    <div className="p-6">
-       <div className="flex justify-between mb-6"><h2 className="text-2xl font-bold text-slate-800">Despensa</h2><button onClick={()=>{setEditing({}); setModal(true)}} className="bg-blue-900 text-white px-4 py-2 rounded-lg flex items-center gap-2"><Plus size={20}/> Adicionar</button></div>
-       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-          <div className="p-4 border-b flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-3 flex-1">
-              <Search className="text-slate-400" />
-              <input
-                placeholder="Buscar item..."
-                className="w-full outline-none"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <select
-              className="border rounded-lg px-3 py-2 text-sm text-slate-700 bg-white"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value as any)}
-            >
-              <option value="todas">Todas as categorias</option>
-              <optgroup label="Alimentos">
-                <option value="alimento_perecivel">Perecível</option>
-                <option value="alimento_nao_perecivel">Não perecível</option>
-              </optgroup>
-              <optgroup label="Vestuário">
-                <option value="roupa_masculina">Masculino</option>
-                <option value="roupa_feminina">Feminino</option>
-                <option value="roupa_infantil">Infantil</option>
-              </optgroup>
-              <option value="higiene">Higiene</option>
-              <option value="outros">Outros</option>
-            </select>
-          </div>
-          <table className="w-full text-left">
-             <thead className="bg-slate-100 text-slate-600 uppercase text-xs"><tr><th className="p-4">Item</th><th className="p-4">Qtd</th><th className="p-4">Mínimo</th><th className="p-4 text-right">Ações</th></tr></thead>
-             <tbody className="divide-y">
-                {inventory
-                  .filter((i) => i.name.toLowerCase().includes(search.toLowerCase()))
-                  .filter((i) => (categoryFilter === 'todas' ? true : i.category === categoryFilter))
-                  .map(i => (
-                   <tr key={i.id} className={i.quantity <= i.minThreshold ? 'bg-red-50' : ''}>
-                      <td className="p-4 font-medium">{i.name} <span className="text-xs text-slate-500 block">{categoryLabel(i.category)}</span></td>
-                      <td className="p-4"><div className="flex items-center gap-3"><button onClick={()=>adjustQty(i.id, -1)}><MinusCircle size={18} className="text-slate-400 hover:text-red-500"/></button><span className="font-bold w-12 text-center">{i.quantity}</span><button onClick={()=>adjustQty(i.id, 1)}><PlusCircle size={18} className="text-slate-400 hover:text-green-500"/></button><span className="text-xs text-slate-500">{i.unit}</span></div></td>
-                      <td className="p-4 text-sm text-slate-500 flex items-center gap-2">{i.quantity <= i.minThreshold && <AlertTriangle size={14} className="text-red-500"/>} {i.minThreshold}</td>
-                      <td className="p-4 text-right"><button onClick={()=>{setEditing(i); setModal(true)}} className="p-2 text-blue-600"><Edit2 size={18}/></button><button onClick={()=>handleDelete(i.id)} className="p-2 text-red-600"><Trash2 size={18}/></button></td>
-                   </tr>
-                ))}
-             </tbody>
-          </table>
-       </div>
-       {modal && (
-         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-6 rounded-xl w-full max-w-sm space-y-4">
-               <h3 className="font-bold text-lg">{editing.id ? 'Editar' : 'Novo'} Item</h3>
-               <input className="w-full border p-2 rounded" placeholder="Nome" value={editing.name||''} onChange={e=>setEditing({...editing, name: e.target.value})}/>
-               <div className="flex gap-2">
-                  <input className="w-full border p-2 rounded" type="number" placeholder="Qtd" value={editing.quantity||''} onChange={e=>setEditing({...editing, quantity: Number(e.target.value)})}/>
-                  <select className="w-full border p-2 rounded" value={editing.unit||'kg'} onChange={e=>setEditing({...editing, unit: e.target.value as any})}><option value="kg">kg</option><option value="unidade">un</option><option value="pacote">pct</option><option value="litro">lt</option></select>
-               </div>
-               <div className="flex gap-2">
-                  <select
-                    className="w-full border p-2 rounded"
-                    value={(editing.category as any) || 'alimento_perecivel'}
-                    onChange={(e) => setEditing({ ...editing, category: e.target.value as any })}
-                  >
-                    <optgroup label="Alimentos">
-                      <option value="alimento_perecivel">Perecível</option>
-                      <option value="alimento_nao_perecivel">Não perecível</option>
-                    </optgroup>
-                    <optgroup label="Vestuário">
-                      <option value="roupa_masculina">Masculino</option>
-                      <option value="roupa_feminina">Feminino</option>
-                      <option value="roupa_infantil">Infantil</option>
-                    </optgroup>
-                    <option value="higiene">Higiene</option>
-                    <option value="outros">Outros</option>
-                  </select>
-                  <input className="w-full border p-2 rounded" type="number" placeholder="Mínimo" value={editing.minThreshold||''} onChange={e=>setEditing({...editing, minThreshold: Number(e.target.value)})}/>
-               </div>
-               <div className="flex justify-end gap-2"><button onClick={()=>setModal(false)} className="px-4 py-2 text-slate-600">Cancelar</button><button onClick={handleSave} className="px-4 py-2 bg-blue-900 text-white rounded">Salvar</button></div>
-            </div>
-         </div>
-       )}
-    </div>
-  );
-};
-
-const BasketCalculator: React.FC<{ 
-  inventory: InventoryItem[]; setInventory: (i: InventoryItem[]) => void;
-  basketConfig: BasketConfig; setBasketConfig: (c: BasketConfig) => void;
-  assembledBaskets: number; setAssembledBaskets: (n: number) => void;
-}> = ({ inventory, setInventory, basketConfig, setBasketConfig, assembledBaskets, setAssembledBaskets }) => {
-  const [selectedItem, setSelectedItem] = useState('');
-  
-  const stats = useMemo(() => {
-    const details = basketConfig.items.map(ci => {
-      const inv = inventory.find(i => i.id === ci.itemId);
-      const stock = inv?.quantity || 0;
-      const possible = ci.quantityRequired > 0 ? Math.floor(stock / ci.quantityRequired) : 9999;
-      return { ...ci, name: inv?.name || '?', stock, possible };
-    });
-    const max = details.length ? Math.min(...details.map(d => d.possible)) : 0;
-    return { max, details };
-  }, [basketConfig, inventory]);
-
-  const assemble = () => {
-    if (stats.max < 1) return;
-    const newInv = inventory.map(invItem => {
-      const ci = basketConfig.items.find(x => x.itemId === invItem.id);
-      return ci ? { ...invItem, quantity: invItem.quantity - ci.quantityRequired } : invItem;
-    });
-    setInventory(newInv);
-    setAssembledBaskets(assembledBaskets + 1);
-  };
-
-  return (
-    <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
-       <div>
-          <h2 className="text-2xl font-bold mb-4">Configuração da Cesta</h2>
-          <div className="bg-white rounded-xl border p-4 space-y-4">
-             <input className="font-bold text-lg w-full border-b outline-none" value={basketConfig.name} onChange={e=>setBasketConfig({...basketConfig, name: e.target.value})} />
-             {stats.details.map(d => (
-               <div key={d.itemId} className="flex items-center justify-between bg-slate-50 p-2 rounded">
-                  <div><div className="font-bold">{d.name}</div><div className="text-xs text-slate-500">Estoque: {d.stock}</div></div>
-                  <div className="flex items-center gap-2">
-                     <input type="number" step="0.5" className="w-16 p-1 border rounded text-right" value={d.quantityRequired} onChange={e=>{
-                        const newItems = basketConfig.items.map(x => x.itemId === d.itemId ? {...x, quantityRequired: Number(e.target.value)} : x);
-                        setBasketConfig({...basketConfig, items: newItems});
-                     }} />
-                     <button onClick={()=>setBasketConfig({...basketConfig, items: basketConfig.items.filter(x=>x.itemId!==d.itemId)})} className="text-red-500"><Trash2 size={16}/></button>
-                  </div>
-               </div>
-             ))}
-             <div className="flex gap-2 mt-4 pt-4 border-t">
-                <select className="flex-1 border rounded p-2" value={selectedItem} onChange={e=>setSelectedItem(e.target.value)}>
-                   <option value="">Adicionar item...</option>
-                   {inventory.filter(i=>!basketConfig.items.find(x=>x.itemId===i.id)).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}
-                </select>
-                <button disabled={!selectedItem} onClick={()=>{setBasketConfig({...basketConfig, items: [...basketConfig.items, {itemId: selectedItem, quantityRequired: 1}]}); setSelectedItem('')}} className="bg-blue-900 text-white p-2 rounded"><Plus/></button>
-             </div>
-          </div>
-       </div>
-       <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-             <div className="bg-white p-4 rounded-xl border shadow-sm">
-                <div className="text-xs text-slate-500 uppercase">Cestas Prontas</div>
-                <div className="text-4xl font-bold text-slate-800 flex justify-between items-end">{assembledBaskets} <Package className="text-blue-500"/></div>
-             </div>
-             <div className="bg-white p-4 rounded-xl border shadow-sm">
-                <div className="text-xs text-slate-500 uppercase">Pode Montar</div>
-                <div className="text-4xl font-bold text-green-600 flex justify-between items-end">{stats.max} <Calculator className="text-green-500"/></div>
-             </div>
-          </div>
-          <button onClick={assemble} disabled={stats.max < 1} className="w-full py-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-3 text-lg transition-transform active:scale-95">
-             Confirmar Montagem de 1 Cesta <ArrowRight/>
-          </button>
-       </div>
-    </div>
-  );
-};
-
-// ==========================================
-// 4. APP PRINCIPAL
-// ==========================================
 export default function App() {
-  const [view, setView] = useState<ViewState>('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [people, setPeople] = useState<Person[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [events, setEvents] = useState<DeliveryEvent[]>([]);
-  const [baskets, setBaskets] = useState(0);
-  const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: 'Padrão', items: [] });
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [booting, setBooting] = useState(true);
 
-  // Inicialização
+  const [authTab, setAuthTab] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+
+  const adminEmails = useMemo(
+    () =>
+      String((import.meta as any).env?.VITE_ADMIN_EMAILS || "")
+        .split(",")
+        .map((s: string) => s.trim().toLowerCase())
+        .filter(Boolean),
+    []
+  );
+
+  const canEdit = useMemo(() => {
+    if (!session) return false;
+    const role = profile?.role ?? "viewer";
+    const emailLower = String(session.user?.email || "").toLowerCase();
+    const forceAdmin = adminEmails.includes(emailLower);
+    return forceAdmin || role === "editor" || role === "admin";
+  }, [adminEmails, profile, session]);
+
+  const isAdmin = useMemo(() => {
+    if (!session) return false;
+    const role = profile?.role ?? "viewer";
+    const emailLower = String(session.user?.email || "").toLowerCase();
+    const forceAdmin = adminEmails.includes(emailLower);
+    return forceAdmin || role === "admin";
+  }, [adminEmails, profile, session]);
+
+  const [view, setView] = useState<ViewKey>("dashboard");
+
+  // ---------- Data ----------
+  const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([]);
+  const [estoque, setEstoque] = useState<EstoqueItem[]>([]);
+  const [eventos, setEventos] = useState<Evento[]>([]);
+  const [alertValidade, setAlertValidade] = useState<AlertValidade[]>([]);
+  const [alertMinimo, setAlertMinimo] = useState<AlertMinimo[]>([]);
+  const [dataErr, setDataErr] = useState<string | null>(null);
+  const [dataLoading, setDataLoading] = useState(false);
+
+  // ---------- Estoque modal ----------
+  const [itemModalOpen, setItemModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<EstoqueItem | null>(null);
+
+  const emptyItem = useMemo(
+    () => ({
+      nome: "",
+      categoria: "alimento_nao_perecivel",
+      quantidade: 0,
+      unidade: "unidade",
+      validade: "",
+      status_conservacao: "",
+      codigo_barras: "",
+      minimo_alerta: 0,
+      data_entrada: "",
+      status: "disponivel",
+      observacoes: "",
+    }),
+    []
+  );
+
+  const [formItem, setFormItem] = useState<any>(emptyItem);
+
+  // ---------- boot/auth ----------
   useEffect(() => {
-    const init = async () => {
-       if (isSupabaseConfigured() && supabase) {
-          const { data: p } = await supabase.from('beneficiarios').select('*');
-          const { data: i } = await supabase.from('estoque').select('*');
-          const { data: e } = await supabase.from('eventos_entrega').select('*');
-          if(p) setPeople(p as any); if(i) setInventory(i as any); if(e) setEvents(e as any);
-       } else {
-          // Fallback LocalStorage
-          const ls = (k:string) => { try { return JSON.parse(localStorage.getItem(k)||'[]') } catch(e){ return [] } };
-          setPeople(ls('people')); setInventory(ls('inventory')); setEvents(ls('events'));
-       }
-       setLoading(false);
-    };
-    init();
+    if (!supabase) {
+      setBooting(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session ?? null);
+      setBooting(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_evt, s) => {
+      setSession(s);
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
-  // Persistência LocalStorage (Backup)
   useEffect(() => {
-    if(!loading) {
-       localStorage.setItem('people', JSON.stringify(people));
-       localStorage.setItem('inventory', JSON.stringify(inventory));
-       localStorage.setItem('events', JSON.stringify(events));
-    }
-  }, [people, inventory, events, loading]);
+    let cancelled = false;
+    (async () => {
+      if (!supabase || !session) {
+        setProfile(null);
+        return;
+      }
+      const p = await fetchMyProfile();
+      if (!cancelled) setProfile(p);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
-  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin" size={48}/></div>;
+  const doLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    if (!supabase) {
+      setAuthError("Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Netlify.");
+      return;
+    }
+
+    setAuthBusy(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setAuthBusy(false);
+
+    if (error) setAuthError(error.message);
+  };
+
+  const doSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    if (!supabase) {
+      setAuthError("Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Netlify.");
+      return;
+    }
+
+    setAuthBusy(true);
+    const { error } = await supabase.auth.signUp({ email, password });
+    setAuthBusy(false);
+
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+
+    setAuthTab("login");
+    setAuthError("Conta criada! Se o Supabase exigir confirmação por email, confirme e depois faça login.");
+  };
+
+  const logout = async () => {
+    if (supabase) await supabase.auth.signOut();
+  };
+
+  // ---------- Load all data ----------
+  const loadAll = async () => {
+    if (!supabase) return;
+    setDataErr(null);
+    setDataLoading(true);
+
+    try {
+      // Beneficiários
+      const b = await supabase.from("beneficiarios").select("*").order("created_at", { ascending: false });
+      if (b.error) throw b.error;
+
+      // Eventos
+      const e = await supabase.from("eventos_entrega").select("*").order("date", { ascending: true });
+      if (e.error) throw e.error;
+
+      // Estoque
+      const s = await supabase
+        .from("estoque")
+        .select("id,nome,categoria,quantidade,unidade,validade,status_conservacao,codigo_barras,minimo_alerta,data_entrada,status,observacoes,created_at")
+        .order("created_at", { ascending: false });
+      if (s.error) throw s.error;
+
+      // Alertas (views)
+      const av = await supabase.from("alertas_validade").select("*").order("dias_para_vencer", { ascending: true });
+      const am = await supabase.from("alertas_minimo").select("*").order("falta_para_minimo", { ascending: false });
+
+      // views podem falhar se não existirem ainda
+      setAlertValidade((av.data as any[])?.map((r) => ({
+        id: String(r.id),
+        nome: String(r.nome),
+        categoria: String(r.categoria),
+        validade: String(r.validade),
+        dias_para_vencer: Number(r.dias_para_vencer),
+      })) ?? []);
+      setAlertMinimo((am.data as any[])?.map((r) => ({
+        id: String(r.id),
+        nome: String(r.nome),
+        categoria: String(r.categoria),
+        quantidade: Number(r.quantidade ?? 0),
+        minimo: Number(r.minimo ?? 0),
+        falta_para_minimo: Number(r.falta_para_minimo ?? 0),
+      })) ?? []);
+
+      setBeneficiarios((b.data as any[]) as Beneficiario[]);
+      setEventos((e.data as any[]) as Evento[]);
+      setEstoque((s.data as any[])?.map((r) => ({
+        ...r,
+        quantidade: Number(r.quantidade ?? 0),
+        minimo_alerta: r.minimo_alerta == null ? null : Number(r.minimo_alerta),
+      })) as EstoqueItem[]);
+    } catch (err: any) {
+      setDataErr(err?.message ?? String(err));
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // ---------- Estoque CRUD ----------
+  const openNewItem = () => {
+    setEditingItem(null);
+    setFormItem({ ...emptyItem });
+    setItemModalOpen(true);
+  };
+
+  const openEditItem = (it: EstoqueItem) => {
+    setEditingItem(it);
+    setFormItem({
+      nome: it.nome ?? "",
+      categoria: it.categoria ?? "outros",
+      quantidade: it.quantidade ?? 0,
+      unidade: it.unidade ?? "unidade",
+      validade: it.validade ?? "",
+      status_conservacao: it.status_conservacao ?? "",
+      codigo_barras: it.codigo_barras ?? "",
+      minimo_alerta: it.minimo_alerta ?? 0,
+      data_entrada: it.data_entrada ?? "",
+      status: it.status ?? "disponivel",
+      observacoes: it.observacoes ?? "",
+    });
+    setItemModalOpen(true);
+  };
+
+  const saveItem = async () => {
+    if (!supabase) return;
+    setDataErr(null);
+
+    if (!canEdit) {
+      setDataErr("Você não tem permissão para editar.");
+      return;
+    }
+
+    const payload: any = {
+      nome: String(formItem.nome || "").trim(),
+      categoria: String(formItem.categoria || "outros"),
+      quantidade: Number(formItem.quantidade || 0),
+      unidade: String(formItem.unidade || "unidade"),
+      validade: formItem.validade ? String(formItem.validade) : null,
+      status_conservacao: formItem.status_conservacao ? String(formItem.status_conservacao) : null,
+      codigo_barras: formItem.codigo_barras ? String(formItem.codigo_barras) : null,
+      minimo_alerta: formItem.minimo_alerta === "" ? 0 : Number(formItem.minimo_alerta || 0),
+      data_entrada: formItem.data_entrada ? String(formItem.data_entrada) : null,
+      status: String(formItem.status || "disponivel"),
+      observacoes: formItem.observacoes ? String(formItem.observacoes) : null,
+    };
+
+    if (!payload.nome) {
+      setDataErr("Informe o nome do item.");
+      return;
+    }
+
+    setDataLoading(true);
+    try {
+      if (editingItem?.id) {
+        const { error } = await supabase.from("estoque").update(payload).eq("id", editingItem.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("estoque").insert(payload);
+        if (error) throw error;
+      }
+      setItemModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setDataErr(err?.message ?? String(err));
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const deleteItem = async (id: string) => {
+    if (!supabase) return;
+    setDataErr(null);
+
+    if (!canEdit) {
+      setDataErr("Você não tem permissão para editar.");
+      return;
+    }
+
+    if (!confirm("Excluir este item do estoque?")) return;
+
+    setDataLoading(true);
+    try {
+      const { error } = await supabase.from("estoque").delete().eq("id", id);
+      if (error) throw error;
+      await loadAll();
+    } catch (err: any) {
+      setDataErr(err?.message ?? String(err));
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // ---------- UI ----------
+  if (booting) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <Loader2 className="animate-spin" size={48} />
+      </div>
+    );
+  }
+
+  if (!supabase) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-lg bg-white rounded-2xl shadow p-6 border border-slate-200">
+          <div className="text-xl font-bold text-slate-900">Sistema ASA</div>
+          <div className="mt-2 text-slate-700">Falta configurar as variáveis do Supabase no Netlify:</div>
+          <div className="mt-3 text-sm bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <div>
+              <b>VITE_SUPABASE_URL</b>
+            </div>
+            <div>
+              <b>VITE_SUPABASE_ANON_KEY</b>
+            </div>
+            <div className="mt-2 text-slate-600">Depois disso, faça um novo deploy.</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 border border-slate-200">
+          <div className="flex items-center gap-3">
+            <img
+              src="/asa-logo.jpg"
+              alt="ASA"
+              className="h-10 w-10 rounded-lg object-contain"
+              onError={(e) => (((e.currentTarget as HTMLImageElement).style.display = "none"))}
+            />
+            <div>
+              <div className="text-xl font-bold text-slate-900">Sistema ASA</div>
+              <div className="text-sm text-slate-600">Acesso ao painel</div>
+            </div>
+          </div>
+
+          <div className="mt-5 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setAuthTab("login")}
+              className={cn(
+                "flex-1 rounded-lg border px-3 py-2 font-semibold",
+                authTab === "login" ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200"
+              )}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthTab("signup")}
+              className={cn(
+                "flex-1 rounded-lg border px-3 py-2 font-semibold",
+                authTab === "signup" ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200"
+              )}
+            >
+              Criar conta
+            </button>
+          </div>
+
+          <form onSubmit={authTab === "login" ? doLogin : doSignup} className="mt-5 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">E-mail</label>
+              <input
+                type="email"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                value={email}
+                onChange={(ev) => setEmail(ev.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Senha</label>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                required
+              />
+              <div className="text-xs text-slate-500 mt-1">
+                Use uma senha forte. (O Supabase pode exigir confirmação por email.)
+              </div>
+            </div>
+
+            {authError && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2 text-sm">
+                {authError}
+              </div>
+            )}
+
+            <button
+              disabled={authBusy}
+              className="w-full rounded-lg bg-slate-900 text-white font-semibold py-2 disabled:opacity-60"
+            >
+              {authBusy ? "Aguarde..." : authTab === "login" ? "Entrar" : "Criar conta"}
+            </button>
+
+            <div className="text-xs text-slate-500">
+              Permissões: novos usuários entram como <b>Somente visualizar</b>. Admin pode liberar edição.
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  const emailDisplay = String(session.user?.email || "");
+  const roleDisplay = profile?.role ?? "viewer";
+
+  const totalEstoque = estoque.length;
+  const totalBenef = beneficiarios.length;
+  const totalEventos = eventos.length;
 
   return (
-    <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
-      <Sidebar currentView={view} setCurrentView={setView} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-         <header className="md:hidden bg-blue-900 text-white p-4 flex justify-between items-center shadow">
-            <div className="font-bold">ASA Gestão</div>
-            <button onClick={()=>setSidebarOpen(true)}><Menu/></button>
-         </header>
-         <main className="flex-1 overflow-y-auto">
-            {view === 'dashboard' && <Dashboard people={people} inventory={inventory} events={events} setEvents={setEvents} />}
-            {view === 'people' && <PeopleManager people={people} setPeople={setPeople} />}
-            {view === 'inventory' && <InventoryManager inventory={inventory} setInventory={setInventory} />}
-            {view === 'baskets' && <BasketCalculator inventory={inventory} setInventory={setInventory} basketConfig={basketConfig} setBasketConfig={setBasketConfig} assembledBaskets={baskets} setAssembledBaskets={setBaskets} />}
-         </main>
-      </div>
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img
+              src="/asa-logo.jpg"
+              alt="ASA"
+              className="h-9 w-9 rounded-lg object-contain"
+              onError={(e) => (((e.currentTarget as HTMLImageElement).style.display = "none"))}
+            />
+            <div>
+              <div className="text-lg font-bold text-slate-900">ASA</div>
+              <div className="text-xs text-slate-600">
+                {emailDisplay} • <Badge>{isAdmin ? "admin" : roleDisplay}</Badge>{" "}
+                {!canEdit ? <Badge>somente leitura</Badge> : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadAll}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white font-semibold px-3 py-2 hover:bg-slate-50"
+              title="Recarregar dados"
+            >
+              {dataLoading ? <Loader2 className="animate-spin" size={18} /> : <Settings size={18} />}
+              Atualizar
+            </button>
+
+            <button
+              onClick={logout}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white font-semibold px-4 py-2"
+            >
+              <LogOut size={18} />
+              Sair
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+        <aside className="bg-white border border-slate-200 rounded-2xl p-3 h-fit">
+          <div className="px-2 pb-3 flex items-center gap-2">
+            <img
+              src="/asa-logo.jpg"
+              alt="ASA"
+              className="h-9 w-9 rounded-lg object-contain"
+              onError={(e) => (((e.currentTarget as HTMLImageElement).style.display = "none"))}
+            />
+            <div>
+              <div className="font-bold text-slate-900 leading-tight">Sistema ASA</div>
+              <div className="text-xs text-slate-500 leading-tight">Menu</div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <SidebarButton
+              active={view === "dashboard"}
+              icon={<LayoutDashboard size={18} />}
+              label="Visão Geral"
+              onClick={() => setView("dashboard")}
+            />
+            <SidebarButton
+              active={view === "estoque"}
+              icon={<Package size={18} />}
+              label="Estoque"
+              onClick={() => setView("estoque")}
+            />
+            <SidebarButton
+              active={view === "eventos"}
+              icon={<CalendarDays size={18} />}
+              label="Eventos"
+              onClick={() => setView("eventos")}
+            />
+            <SidebarButton
+              active={view === "beneficiarios"}
+              icon={<Users size={18} />}
+              label="Beneficiários"
+              onClick={() => setView("beneficiarios")}
+            />
+            <SidebarButton
+              active={view === "cestas"}
+              icon={<Boxes size={18} />}
+              label="Cestas"
+              onClick={() => setView("cestas")}
+            />
+            {isAdmin ? (
+              <SidebarButton
+                active={view === "usuarios"}
+                icon={<Settings size={18} />}
+                label="Usuários (info)"
+                onClick={() => setView("usuarios")}
+              />
+            ) : null}
+          </div>
+        </aside>
+
+        <section className="space-y-4">
+          {dataErr ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-900">
+              <div className="font-bold flex items-center gap-2">
+                <AlertTriangle size={18} /> Erro
+              </div>
+              <div className="text-sm mt-1">{dataErr}</div>
+              <div className="text-xs mt-2 text-red-800">
+                Dica: isso geralmente é RLS bloqueando, tabela/view não existe, ou variáveis do Supabase erradas.
+              </div>
+            </div>
+          ) : null}
+
+          {view === "dashboard" && (
+            <Card title="Dashboard">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-xs text-slate-600">Itens em estoque</div>
+                  <div className="text-2xl font-bold text-slate-900">{totalEstoque}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-xs text-slate-600">Beneficiários</div>
+                  <div className="text-2xl font-bold text-slate-900">{totalBenef}</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-xs text-slate-600">Eventos</div>
+                  <div className="text-2xl font-bold text-slate-900">{totalEventos}</div>
+                </div>
+              </div>
+
+              {(alertValidade.length > 0 || alertMinimo.length > 0) ? (
+                <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                    <div className="font-bold text-red-900">⚠️ Próximos do vencimento (7 dias)</div>
+                    {alertValidade.length === 0 ? (
+                      <div className="text-sm text-red-800 mt-2">Nenhum.</div>
+                    ) : (
+                      <ul className="mt-2 text-sm text-red-800 space-y-1">
+                        {alertValidade.slice(0, 8).map((a) => (
+                          <li key={a.id}>
+                            <b>{a.nome}</b> • {prettyCat(a.categoria)} • vence em <b>{a.validade}</b> ({a.dias_para_vencer} dias)
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="font-bold text-amber-900">📉 Abaixo do mínimo</div>
+                    {alertMinimo.length === 0 ? (
+                      <div className="text-sm text-amber-900 mt-2">Nenhum.</div>
+                    ) : (
+                      <ul className="mt-2 text-sm text-amber-900 space-y-1">
+                        {alertMinimo.slice(0, 8).map((a) => (
+                          <li key={a.id}>
+                            <b>{a.nome}</b> • {prettyCat(a.categoria)} • qtd {a.quantidade} / mín {a.minimo} (faltam {a.falta_para_minimo})
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 text-sm text-slate-600">
+                  Se as views <b>alertas_validade</b> e <b>alertas_minimo</b> ainda não existirem no Supabase, os alertas aparecem vazios.
+                </div>
+              )}
+            </Card>
+          )}
+
+          {view === "estoque" && (
+            <Card
+              title="Estoque"
+              right={
+                <div className="flex items-center gap-2">
+                  {!canEdit ? <Badge>somente leitura</Badge> : null}
+                  {canEdit ? (
+                    <button
+                      onClick={openNewItem}
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white font-semibold px-3 py-2"
+                    >
+                      <Plus size={18} /> Criar item
+                    </button>
+                  ) : null}
+                </div>
+              }
+            >
+              <div className="text-sm text-slate-600 mb-3">
+                Categorias: alimentos (perecível / não perecível), vestimenta (masc / fem / infantil), higiene, móveis, outros.
+              </div>
+
+              <div className="overflow-auto border border-slate-200 rounded-xl">
+                <table className="min-w-[900px] w-full text-sm">
+                  <thead className="bg-slate-100">
+                    <tr className="text-left">
+                      <th className="p-2">Item</th>
+                      <th className="p-2">Categoria</th>
+                      <th className="p-2">Qtd</th>
+                      <th className="p-2">Validade</th>
+                      <th className="p-2">Mín</th>
+                      <th className="p-2">Status</th>
+                      <th className="p-2">Obs.</th>
+                      <th className="p-2 w-[140px]">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {estoque.length === 0 ? (
+                      <tr>
+                        <td className="p-3 text-slate-600" colSpan={8}>
+                          Nenhum item no estoque ainda. Clique em <b>Criar item</b>.
+                        </td>
+                      </tr>
+                    ) : (
+                      estoque.map((it) => (
+                        <tr key={it.id} className="border-t">
+                          <td className="p-2 font-medium text-slate-900">{it.nome ?? "-"}</td>
+                          <td className="p-2">{prettyCat(it.categoria)}</td>
+                          <td className="p-2">
+                            {Number(it.quantidade ?? 0)} {it.unidade ?? "unidade"}
+                          </td>
+                          <td className="p-2">{it.validade ?? "-"}</td>
+                          <td className="p-2">{it.minimo_alerta ?? 0}</td>
+                          <td className="p-2">{it.status ?? "disponivel"}</td>
+                          <td className="p-2">{it.observacoes ? it.observacoes.slice(0, 40) : "-"}</td>
+                          <td className="p-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-lg border px-2 py-1",
+                                  canEdit ? "border-slate-200 hover:bg-slate-50" : "border-slate-100 text-slate-300 cursor-not-allowed"
+                                )}
+                                onClick={() => (canEdit ? openEditItem(it) : null)}
+                                disabled={!canEdit}
+                                title="Editar"
+                              >
+                                <Pencil size={16} /> Editar
+                              </button>
+                              <button
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-lg border px-2 py-1",
+                                  canEdit ? "border-red-200 text-red-700 hover:bg-red-50" : "border-slate-100 text-slate-300 cursor-not-allowed"
+                                )}
+                                onClick={() => (canEdit ? deleteItem(it.id) : null)}
+                                disabled={!canEdit}
+                                title="Excluir"
+                              >
+                                <Trash2 size={16} /> Excluir
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {itemModalOpen ? (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+                  <div className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-lg">
+                    <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <div className="font-bold text-slate-900">
+                        {editingItem ? "Editar item" : "Criar item"}
+                      </div>
+                      <button
+                        className="text-slate-600 hover:text-slate-900 px-2 py-1"
+                        onClick={() => setItemModalOpen(false)}
+                      >
+                        Fechar
+                      </button>
+                    </div>
+
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Nome</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.nome}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, nome: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Categoria</label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.categoria}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, categoria: e.target.value }))}
+                        >
+                          <option value="alimento_perecivel">Alimento (Perecível)</option>
+                          <option value="alimento_nao_perecivel">Alimento (Não perecível)</option>
+                          <option value="higiene">Higiene</option>
+                          <option value="roupa_masculina">Vestimenta (Masculino)</option>
+                          <option value="roupa_feminina">Vestimenta (Feminino)</option>
+                          <option value="roupa_infantil">Vestimenta (Infantil)</option>
+                          <option value="movel">Móveis</option>
+                          <option value="outros">Outros</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Quantidade</label>
+                        <input
+                          type="number"
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.quantidade}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, quantidade: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Unidade</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.unidade}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, unidade: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Validade (opcional)</label>
+                        <input
+                          type="date"
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.validade}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, validade: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Mínimo p/ alerta</label>
+                        <input
+                          type="number"
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.minimo_alerta}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, minimo_alerta: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Código de barras</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.codigo_barras}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, codigo_barras: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Status</label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formItem.status}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, status: e.target.value }))}
+                        >
+                          <option value="disponivel">Disponível</option>
+                          <option value="reservado">Reservado</option>
+                          <option value="indisponivel">Indisponível</option>
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700">Observações</label>
+                        <textarea
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          rows={3}
+                          value={formItem.observacoes}
+                          onChange={(e) => setFormItem((p: any) => ({ ...p, observacoes: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 font-semibold hover:bg-slate-50"
+                        onClick={() => setItemModalOpen(false)}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        disabled={dataLoading}
+                        className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold disabled:opacity-60"
+                        onClick={saveItem}
+                      >
+                        {dataLoading ? "Salvando..." : "Salvar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </Card>
+          )}
+
+          {view === "beneficiarios" && (
+            <Card title="Beneficiários" right={!canEdit ? <Badge>somente leitura</Badge> : null}>
+              <div className="text-sm text-slate-600 mb-3">
+                Esta aba já está ligada à tabela <b>public.beneficiarios</b>. (CRUD completo pode ser adicionado depois.)
+              </div>
+
+              <div className="overflow-auto border border-slate-200 rounded-xl">
+                <table className="min-w-[700px] w-full text-sm">
+                  <thead className="bg-slate-100">
+                    <tr className="text-left">
+                      <th className="p-2">Nome</th>
+                      <th className="p-2">Família</th>
+                      <th className="p-2">Telefone</th>
+                      <th className="p-2">Endereço</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {beneficiarios.length === 0 ? (
+                      <tr>
+                        <td className="p-3 text-slate-600" colSpan={4}>
+                          Nenhum beneficiário.
+                        </td>
+                      </tr>
+                    ) : (
+                      beneficiarios.map((b) => (
+                        <tr key={b.id} className="border-t">
+                          <td className="p-2 font-medium text-slate-900">{b.name}</td>
+                          <td className="p-2">{b.familySize}</td>
+                          <td className="p-2">{b.phone}</td>
+                          <td className="p-2">{b.address}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {view === "eventos" && (
+            <Card title="Eventos" right={!canEdit ? <Badge>somente leitura</Badge> : null}>
+              <div className="text-sm text-slate-600 mb-3">
+                Esta aba está ligada à tabela <b>public.eventos_entrega</b>. (CRUD completo pode ser adicionado depois.)
+              </div>
+
+              <div className="space-y-2">
+                {eventos.length === 0 ? (
+                  <div className="text-slate-600">Nenhum evento.</div>
+                ) : (
+                  eventos.map((ev) => (
+                    <div key={ev.id} className="border border-slate-200 rounded-xl p-3">
+                      <div className="font-semibold text-slate-900">{ev.title}</div>
+                      <div className="text-xs text-slate-600">{ev.date}</div>
+                      {ev.description ? <div className="text-sm text-slate-700 mt-1">{ev.description}</div> : null}
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          )}
+
+          {view === "cestas" && (
+            <Card title="Cestas">
+              <div className="text-slate-700">
+                Configuração de cestas usa a tabela <b>public.configuracoes</b> (keys: basket_config e assembled_baskets).
+              </div>
+              <div className="text-sm text-slate-600 mt-2">
+                Se você quiser, eu ligo esta tela ao Supabase com edição de itens e baixa automática do estoque na entrega.
+              </div>
+            </Card>
+          )}
+
+          {view === "usuarios" && isAdmin && (
+            <Card title="Usuários (admin)">
+              <div className="text-sm text-slate-700">
+                Seu SQL atual permite:
+                <ul className="list-disc ml-5 mt-2 text-slate-700">
+                  <li>Usuário ler/editar apenas o próprio profile (RLS).</li>
+                  <li>O “admin” pelo email pode ser forçado no front via <b>VITE_ADMIN_EMAILS</b>.</li>
+                </ul>
+              </div>
+              <div className="mt-3 text-sm text-slate-600">
+                Para um painel de admin que muda roles de outros usuários, precisa de uma Function (service role) — não dá com anon key.
+              </div>
+            </Card>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
