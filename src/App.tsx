@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { createClient, type Session } from "@supabase/supabase-js";
 import {
   LayoutDashboard,
@@ -123,7 +123,7 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
+function Badge({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
       {children}
@@ -137,8 +137,8 @@ function Card({
   right,
 }: {
   title: string;
-  children: React.ReactNode;
-  right?: React.ReactNode;
+  children: ReactNode;
+  right?: ReactNode;
 }) {
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
@@ -158,7 +158,7 @@ function SidebarButton({
   onClick,
 }: {
   active: boolean;
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   onClick: () => void;
 }) {
@@ -330,7 +330,7 @@ const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta BÃ
     };
   }, [session]);
 
-  const doLogin = async (e: React.FormEvent) => {
+  const doLogin = async (e: FormEvent) => {
     e.preventDefault();
     setAuthError(null);
 
@@ -346,7 +346,7 @@ const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta BÃ
     if (error) setAuthError(error.message);
   };
 
-  const doSignup = async (e: React.FormEvent) => {
+  const doSignup = async (e: FormEvent) => {
     e.preventDefault();
     setAuthError(null);
 
@@ -1149,7 +1149,7 @@ if (!cfg.error && cfg.data) {
           {view === "cestas" && (
             <CestasManager
               canEdit={canEdit}
-              inventory={inventory}
+              inventory={estoque}
               basketConfig={basketConfig}
               setBasketConfig={setBasketConfig}
               assembledBaskets={assembledBaskets}
