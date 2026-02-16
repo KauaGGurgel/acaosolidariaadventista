@@ -16,6 +16,8 @@ import {
   Pencil,
   AlertTriangle,
 } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 /**
  * ✅ Regras deste App.tsx
@@ -1929,6 +1931,14 @@ function Relatorios({
       .reduce((acc, i) => acc + Number(i.quantidade || 0), 0);
   }, [estoque]);
 
+
+  const alimentosDetalhe = useMemo(() => {
+    const cats = new Set(["alimento_perecivel", "alimento_nao_perecivel"]);
+    return [...estoque]
+      .filter((i) => cats.has(i.categoria || "") && String(i.nome ?? "").trim() !== "")
+      .sort((a, b) => String(a.nome ?? "").localeCompare(String(b.nome ?? "")));
+  }, [estoque]);
+
   const printReport = () => {
     const html = document.getElementById("asa-report")?.innerHTML;
     if (!html) return;
@@ -1949,6 +1959,121 @@ function Relatorios({
     w.document.close();
     w.focus();
     w.print();
+  };
+
+
+  const gerarPDF = () => {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    const safeY = (y: number) => Math.max(10, Math.min(y, 285));
+
+    // Cabeçalho
+    doc.setFontSize(16);
+    doc.text("Relatório ASA", pageWidth / 2, 15, { align: "center" });
+
+    doc.setFontSize(10);
+    doc.text(`Período: ${fmtDateBR(rangeStart)} até ${fmtDateBR(rangeEnd)}`, pageWidth / 2, 22, { align: "center" });
+    doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, pageWidth / 2, 27, { align: "center" });
+
+    // Resumo
+    doc.setFontSize(12);
+    doc.text("Resumo Geral", 14, 38);
+
+    doc.setFontSize(10);
+    doc.text(`Cestas montadas: ${assembledBaskets}`, 14, 45);
+    doc.text(`Beneficiários no período: ${beneficiariosNoPeriodo.length}`, 14, 51);
+    doc.text(`Itens lançados no período (soma de quantidade): ${totalItensNoPeriodo}`, 14, 57);
+    doc.text(`Estoque atual (alimentos): ${alimentosAtual}`, 14, 63);
+    doc.text(`Estoque atual (roupas): ${roupasAtual}`, 14, 69);
+
+    // Estoque por categoria
+    autoTable(doc as any, {
+      startY: 76,
+      head: [["Categoria", "Quantidade"]],
+      body: Object.entries(sumByCategorias)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([k, v]) => [prettyCat(k), String(v)]),
+      styles: { fontSize: 9 },
+      headStyles: { fontSize: 9 },
+    });
+
+    let y = (doc as any).lastAutoTable?.finalY ?? 76;
+    y = safeY(y + 8);
+
+    // Alimentos por item (nome)
+    if (alimentosDetalhe.length > 0) {
+      autoTable(doc as any, {
+        startY: y,
+        head: [["Alimento", "Categoria", "Quantidade", "Unidade", "Validade"]],
+        body: alimentosDetalhe.map((it) => [
+          String(it.nome ?? ""),
+          prettyCat(it.categoria),
+          String(it.quantidade ?? 0),
+          String(it.unidade ?? "unidade"),
+          fmtDateBR(it.validade ?? null),
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fontSize: 9 },
+      });
+      y = (doc as any).lastAutoTable?.finalY ?? y;
+      y = safeY(y + 8);
+    }
+
+    // Beneficiários
+    if (beneficiariosNoPeriodo.length > 0) {
+      autoTable(doc as any, {
+        startY: y,
+        head: [["Nome", "Família", "Telefone", "Endereço"]],
+        body: beneficiariosNoPeriodo.map((b) => [
+          b.name,
+          String(b.familySize),
+          b.phone,
+          b.address,
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fontSize: 9 },
+      });
+      y = (doc as any).lastAutoTable?.finalY ?? y;
+      y = safeY(y + 8);
+    }
+
+    // Alertas - validade
+    if (alertasValidade.length > 0) {
+      autoTable(doc as any, {
+        startY: y,
+        head: [["Item", "Categoria", "Validade", "Dias p/ vencer"]],
+        body: alertasValidade.map((a) => [
+          a.nome,
+          prettyCat(a.categoria),
+          fmtDateBR(a.validade ?? null),
+          String(a.dias_para_vencer),
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fontSize: 9 },
+      });
+      y = (doc as any).lastAutoTable?.finalY ?? y;
+      y = safeY(y + 8);
+    }
+
+    // Alertas - mínimo
+    if (alertasMinimo.length > 0) {
+      autoTable(doc as any, {
+        startY: y,
+        head: [["Item", "Categoria", "Qtd Atual", "Mínimo", "Falta"]],
+        body: alertasMinimo.map((a) => [
+          a.nome,
+          prettyCat(a.categoria),
+          String(a.quantidade),
+          String(a.minimo),
+          String(a.falta_para_minimo),
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fontSize: 9 },
+      });
+    }
+
+    doc.save(`Relatorio_ASA_${rangeStart}_a_${rangeEnd}.pdf`);
   };
 
   const downloadCSV = () => {
@@ -2014,11 +2139,11 @@ function Relatorios({
             Imprimir
           </button>
           <button
-            onClick={downloadCSV}
+            onClick={gerarPDF}
             className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white px-3 py-1.5 text-sm"
           >
             <FileDown size={16} />
-            Baixar CSV
+            Baixar PDF
           </button>
         </div>
       }
@@ -2080,7 +2205,35 @@ function Relatorios({
           </tbody>
         </table>
 
-        <h2 className="font-semibold">Beneficiários cadastrados no período</h2>
+        <h2 className="font-semibold mt-6">Alimentos (por item)</h2>
+        {alimentosDetalhe.length === 0 ? (
+          <div className="text-sm text-slate-600 mt-2">Nenhum alimento cadastrado no estoque.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Alimento</th>
+                <th>Categoria</th>
+                <th>Quantidade</th>
+                <th>Unidade</th>
+                <th>Validade</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alimentosDetalhe.map((it) => (
+                <tr key={it.id}>
+                  <td>{it.nome}</td>
+                  <td>{prettyCat(it.categoria)}</td>
+                  <td>{it.quantidade}</td>
+                  <td>{it.unidade}</td>
+                  <td>{fmtDateBR(it.validade ?? null)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <h2 className="font-semibold mt-6">Beneficiários cadastrados no período</h2>
         {beneficiariosNoPeriodo.length === 0 ? (
           <div className="text-sm text-slate-600 mt-2">Nenhum cadastro no período.</div>
         ) : (
@@ -2106,7 +2259,7 @@ function Relatorios({
           </table>
         )}
 
-        <h2 className="font-semibold">Alertas</h2>
+        <h2 className="font-semibold mt-6">Alertas</h2>
         <div className="text-sm text-slate-600 mt-2">
           {alertasValidade.length === 0 && alertasMinimo.length === 0
             ? "Nenhum alerta no momento."
