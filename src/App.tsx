@@ -119,6 +119,12 @@ const supabaseAnon = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string 
 const supabase =
   supabaseUrl && supabaseAnon ? createClient(supabaseUrl, supabaseAnon) : null;
 
+function genTextId() {
+  const c: any = (globalThis as any).crypto;
+  if (c?.randomUUID) return String(c.randomUUID());
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
@@ -276,6 +282,18 @@ const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta B�
   // ---------- Estoque modal ----------
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<EstoqueItem | null>(null);
+
+  // ---------- Beneficiário modal (criar) ----------
+  const [benefModalOpen, setBenefModalOpen] = useState(false);
+  const [formBenef, setFormBenef] = useState<{ name: string; familySize: number; phone: string; address: string; notes: string }>(
+    { name: "", familySize: 1, phone: "", address: "", notes: "" }
+  );
+
+  // ---------- Evento modal (criar) ----------
+  const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [formEvento, setFormEvento] = useState<{ title: string; date: string; description: string }>(
+    { title: "", date: new Date().toISOString().slice(0, 10), description: "" }
+  );
 
   const emptyItem = useMemo(
     () => ({
@@ -555,6 +573,97 @@ if (!cfg.error && cfg.data) {
     try {
       const { error } = await supabase.from("estoque").delete().eq("id", id);
       if (error) throw error;
+      await loadAll();
+    } catch (err: any) {
+      setDataErr(err?.message ?? String(err));
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // ---------- Beneficiários (criar) ----------
+  const openNewBenef = () => {
+    setFormBenef({ name: "", familySize: 1, phone: "", address: "", notes: "" });
+    setBenefModalOpen(true);
+  };
+
+  const saveBenef = async () => {
+    if (!supabase) return;
+    setDataErr(null);
+
+    if (!canEdit) {
+      setDataErr("Você não tem permissão para editar.");
+      return;
+    }
+
+    const name = String(formBenef.name || "").trim();
+    if (!name) {
+      setDataErr("Informe o nome do beneficiário.");
+      return;
+    }
+
+    const payload: any = {
+      id: genTextId(),
+      name,
+      familySize: Math.max(1, Number(formBenef.familySize || 1)),
+      address: String(formBenef.address || ""),
+      phone: String(formBenef.phone || ""),
+      lastBasketDate: null,
+      notes: formBenef.notes ? String(formBenef.notes) : null,
+      history: [],
+    };
+
+    setDataLoading(true);
+    try {
+      const { error } = await supabase.from("beneficiarios").insert(payload);
+      if (error) throw error;
+      setBenefModalOpen(false);
+      await loadAll();
+    } catch (err: any) {
+      setDataErr(err?.message ?? String(err));
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  // ---------- Eventos (criar) ----------
+  const openNewEvento = () => {
+    setFormEvento({ title: "", date: new Date().toISOString().slice(0, 10), description: "" });
+    setEventModalOpen(true);
+  };
+
+  const saveEvento = async () => {
+    if (!supabase) return;
+    setDataErr(null);
+
+    if (!canEdit) {
+      setDataErr("Você não tem permissão para editar.");
+      return;
+    }
+
+    const title = String(formEvento.title || "").trim();
+    const date = String(formEvento.date || "").trim();
+    if (!title) {
+      setDataErr("Informe o título do evento.");
+      return;
+    }
+    if (!date) {
+      setDataErr("Informe a data do evento.");
+      return;
+    }
+
+    const payload: any = {
+      id: genTextId(),
+      title,
+      date,
+      description: formEvento.description ? String(formEvento.description) : null,
+    };
+
+    setDataLoading(true);
+    try {
+      const { error } = await supabase.from("eventos_entrega").insert(payload);
+      if (error) throw error;
+      setEventModalOpen(false);
       await loadAll();
     } catch (err: any) {
       setDataErr(err?.message ?? String(err));
@@ -1082,9 +1191,24 @@ if (!cfg.error && cfg.data) {
           )}
 
           {view === "beneficiarios" && (
-            <Card title="Beneficiários" right={!canEdit ? <Badge>somente leitura</Badge> : null}>
+            <Card
+              title="Beneficiários"
+              right={
+                <div className="flex items-center gap-2">
+                  {!canEdit ? <Badge>somente leitura</Badge> : null}
+                  {canEdit ? (
+                    <button
+                      onClick={openNewBenef}
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white font-semibold px-3 py-2"
+                    >
+                      <Plus size={18} /> Adicionar
+                    </button>
+                  ) : null}
+                </div>
+              }
+            >
               <div className="text-sm text-slate-600 mb-3">
-                Esta aba já está ligada à tabela <b>public.beneficiarios</b>. (CRUD completo pode ser adicionado depois.)
+                Cadastro rápido de beneficiários (tabela <b>public.beneficiarios</b>).
               </div>
 
               <div className="overflow-auto border border-slate-200 rounded-xl">
@@ -1117,13 +1241,111 @@ if (!cfg.error && cfg.data) {
                   </tbody>
                 </table>
               </div>
+
+              {benefModalOpen ? (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+                  <div className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-lg">
+                    <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <div className="font-bold text-slate-900">Adicionar beneficiário</div>
+                      <button
+                        className="text-slate-600 hover:text-slate-900 px-2 py-1"
+                        onClick={() => setBenefModalOpen(false)}
+                      >
+                        Fechar
+                      </button>
+                    </div>
+
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700">Nome</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formBenef.name}
+                          onChange={(e) => setFormBenef((p) => ({ ...p, name: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Tamanho da família</label>
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formBenef.familySize}
+                          onChange={(e) => setFormBenef((p) => ({ ...p, familySize: Number(e.target.value) }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Telefone</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formBenef.phone}
+                          onChange={(e) => setFormBenef((p) => ({ ...p, phone: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700">Endereço</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formBenef.address}
+                          onChange={(e) => setFormBenef((p) => ({ ...p, address: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700">Observações (opcional)</label>
+                        <textarea
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          rows={3}
+                          value={formBenef.notes}
+                          onChange={(e) => setFormBenef((p) => ({ ...p, notes: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 font-semibold hover:bg-slate-50"
+                        onClick={() => setBenefModalOpen(false)}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        disabled={dataLoading}
+                        className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold disabled:opacity-60"
+                        onClick={saveBenef}
+                      >
+                        {dataLoading ? "Salvando..." : "Salvar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </Card>
           )}
 
           {view === "eventos" && (
-            <Card title="Eventos" right={!canEdit ? <Badge>somente leitura</Badge> : null}>
+            <Card
+              title="Eventos"
+              right={
+                <div className="flex items-center gap-2">
+                  {!canEdit ? <Badge>somente leitura</Badge> : null}
+                  {canEdit ? (
+                    <button
+                      onClick={openNewEvento}
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white font-semibold px-3 py-2"
+                    >
+                      <Plus size={18} /> Adicionar
+                    </button>
+                  ) : null}
+                </div>
+              }
+            >
               <div className="text-sm text-slate-600 mb-3">
-                Esta aba está ligada à tabela <b>public.eventos_entrega</b>. (CRUD completo pode ser adicionado depois.)
+                Agenda de entregas (tabela <b>public.eventos_entrega</b>).
               </div>
 
               <div className="space-y-2">
@@ -1139,6 +1361,69 @@ if (!cfg.error && cfg.data) {
                   ))
                 )}
               </div>
+
+              {eventModalOpen ? (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+                  <div className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-lg">
+                    <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <div className="font-bold text-slate-900">Adicionar evento</div>
+                      <button
+                        className="text-slate-600 hover:text-slate-900 px-2 py-1"
+                        onClick={() => setEventModalOpen(false)}
+                      >
+                        Fechar
+                      </button>
+                    </div>
+
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700">Título</label>
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formEvento.title}
+                          onChange={(e) => setFormEvento((p) => ({ ...p, title: e.target.value }))}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700">Data</label>
+                        <input
+                          type="date"
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          value={formEvento.date}
+                          onChange={(e) => setFormEvento((p) => ({ ...p, date: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-slate-700">Descrição (opcional)</label>
+                        <textarea
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                          rows={3}
+                          value={formEvento.description}
+                          onChange={(e) => setFormEvento((p) => ({ ...p, description: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 font-semibold hover:bg-slate-50"
+                        onClick={() => setEventModalOpen(false)}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        disabled={dataLoading}
+                        className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold disabled:opacity-60"
+                        onClick={saveEvento}
+                      >
+                        {dataLoading ? "Salvando..." : "Salvar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </Card>
           )}
 
