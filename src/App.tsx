@@ -1145,6 +1145,7 @@ if (!cfg.error && cfg.data) {
           {view === "cestas" && (
             <CestasManager
               canEdit={canEdit}
+              isAdmin={isAdmin}
               inventory={estoque}
               basketConfig={basketConfig}
               setBasketConfig={setBasketConfig}
@@ -1205,14 +1206,17 @@ function downloadTextFile(filename: string, content: string, mime = "text/plain;
 
 function CestasManager({
   canEdit,
+  isAdmin,
   inventory,
   basketConfig,
   setBasketConfig,
   assembledBaskets,
   setAssembledBaskets,
   onReload,
-}: {
+}:
+{
   canEdit: boolean;
+  isAdmin: boolean;
   inventory: EstoqueItem[];
   basketConfig: BasketConfig;
   setBasketConfig: (v: BasketConfig) => void;
@@ -1305,6 +1309,33 @@ function CestasManager({
     setOk("Configuração salva.");
   };
 
+
+const resetCestas = async () => {
+  setErr(null);
+  setOk(null);
+  if (!supabase) return;
+  if (!isAdmin) {
+    setErr("Apenas admin pode zerar o contador de cestas.");
+    return;
+  }
+  if (!confirm("Zerar o contador de cestas montadas? Isso não afeta o estoque, apenas o número do relatório.")) return;
+
+  setBusy(true);
+  const { error } = await supabase
+    .from("configuracoes")
+    .upsert([{ key: "assembled_baskets", value: 0 }], { onConflict: "key" });
+  setBusy(false);
+
+  if (error) {
+    setErr("Falha ao zerar contador: " + error.message);
+    return;
+  }
+
+  setAssembledBaskets(0);
+  setOk("Contador de cestas zerado.");
+  await onReload();
+};
+
   const registerBasket = async () => {
     setErr(null);
     setOk(null);
@@ -1377,7 +1408,24 @@ function CestasManager({
 
   return (
     <div className="space-y-4">
-      <Card title="Cestas Básicas" right={<Badge>{assembledBaskets} cestas montadas</Badge>}>
+      <Card title="Cestas Básicas"
+        right={
+          <div className="flex items-center gap-2">
+            <Badge>{assembledBaskets} cestas montadas</Badge>
+            {isAdmin ? (
+              <button
+                onClick={resetCestas}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
+                title="Zerar contador de cestas"
+              >
+                <Trash2 size={16} />
+                Zerar
+              </button>
+            ) : null}
+          </div>
+        }
+      >
         <div className="text-slate-700">
           Configure os itens da cesta e, ao registrar uma cesta, o sistema dá baixa automática no estoque.
         </div>
