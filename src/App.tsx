@@ -1146,7 +1146,7 @@ if (!cfg.error && cfg.data) {
             </Card>
           )}
 
-          {{view === "cestas" && (
+          {view === "cestas" && (
             <CestasManager
               canEdit={canEdit}
               inventory={inventory}
@@ -1817,4 +1817,3 @@ function Relatorios({
     </Card>
   );
 }
-
