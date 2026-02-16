@@ -854,11 +854,7 @@ if (!cfg.error && cfg.data) {
                     )}
                   </div>
                 </div>
-              ) : (
-                <div className="mt-4 text-sm text-slate-600">
-                  Se as views <b>alertas_validade</b> e <b>alertas_minimo</b> ainda não existirem no Supabase, os alertas aparecem vazios.
-                </div>
-              )}
+              ) : null}
             </Card>
           )}
 
@@ -1623,29 +1619,53 @@ function Relatorios({
   };
 
   const downloadCSV = () => {
+    const sep = ";";
+    const esc = (v: any) => {
+      const s = String(v ?? "");
+      const out = s.replace(/"/g, '""');
+      return /[;"\n\r]/.test(out) ? `"${out}"` : out;
+    };
+    const line = (...cols: any[]) => cols.map(esc).join(sep);
+
     const lines: string[] = [];
-    lines.push(["Relatório ASA"].join(","));
-    lines.push([`Período: ${rangeStart} até ${rangeEnd}`].join(","));
-    lines.push([""].join(","));
-    lines.push(["Resumo"].join(","));
-    lines.push(["Cestas montadas (configuracoes.assembled_baskets)", String(assembledBaskets)].join(","));
-    lines.push(["Beneficiários cadastrados no período", String(beneficiariosNoPeriodo.length)].join(","));
-    lines.push(["Itens lançados no período (soma de quantidade)", String(totalItensNoPeriodo)].join(","));
-    lines.push(["Estoque atual - alimentos (soma)", String(alimentosAtual)].join(","));
-    lines.push(["Estoque atual - roupas (soma)", String(roupasAtual)].join(","));
-    lines.push([""].join(","));
-    lines.push(["Estoque por categoria (atual)", "Quantidade"].join(","));
+    lines.push(line("Relatório ASA"));
+    lines.push(line("Período", fmtDateBR(rangeStart), "até", fmtDateBR(rangeEnd)));
+    lines.push(line("Gerado em", new Date().toLocaleString("pt-BR")));
+    lines.push("");
+
+    lines.push(line("Resumo", "Valor"));
+    lines.push(line("Cestas montadas", assembledBaskets));
+    lines.push(line("Beneficiários cadastrados no período", beneficiariosNoPeriodo.length));
+    lines.push(line("Itens lançados no período (soma de quantidade)", totalItensNoPeriodo));
+    lines.push(line("Estoque atual - alimentos (soma)", alimentosAtual));
+    lines.push(line("Estoque atual - roupas (soma)", roupasAtual));
+    lines.push("");
+
+    lines.push(line("Estoque por categoria (atual)", "Quantidade"));
     Object.entries(sumByCategorias)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .forEach(([k, v]) => lines.push([k, String(v)].join(",")));
-    lines.push([""].join(","));
-    lines.push(["Alertas - validade (<=7 dias)", "Dias para vencer"].join(","));
-    alertasValidade.forEach((a) => lines.push([a.nome, String(a.dias_para_vencer ?? "")].join(",")));
-    lines.push([""].join(","));
-    lines.push(["Alertas - mínimo", "Falta p/ mínimo"].join(","));
-    alertasMinimo.forEach((a) => lines.push([a.nome, String(a.falta_para_minimo ?? "")].join(",")));
+      .forEach(([k, v]) => lines.push(line(prettyCat(k), v)));
+    lines.push("");
 
-    downloadTextFile(`relatorio-asa-${rangeStart}-a-${rangeEnd}.csv`, lines.join("\n"), "text/csv;charset=utf-8");
+    lines.push(line("Alertas - validade (até 7 dias)", "Validade", "Dias para vencer"));
+    if (alertasValidade.length === 0) {
+      lines.push(line("Nenhum", "", ""));
+    } else {
+      alertasValidade.forEach((a) => lines.push(line(a.nome, fmtDateBR(a.validade ?? null), a.dias_para_vencer ?? "")));
+    }
+    lines.push("");
+
+    lines.push(line("Alertas - mínimo", "Quantidade", "Mínimo", "Falta p/ mínimo"));
+    if (alertasMinimo.length === 0) {
+      lines.push(line("Nenhum", "", "", ""));
+    } else {
+      alertasMinimo.forEach((a) =>
+        lines.push(line(a.nome, a.quantidade ?? "", a.minimo ?? "", a.falta_para_minimo ?? ""))
+      );
+    }
+
+    const csv = "\ufeff" + lines.join("\n");
+    downloadTextFile(`relatorio-asa-${rangeStart}-a-${rangeEnd}.csv`, csv, "text/csv;charset=utf-8");
   };
 
   return (
@@ -1720,7 +1740,7 @@ function Relatorios({
               .sort((a, b) => a[0].localeCompare(b[0]))
               .map(([k, v]) => (
                 <tr key={k}>
-                  <td>{k}</td>
+                  <td>{prettyCat(k)}</td>
                   <td>{v}</td>
                 </tr>
               ))}
@@ -1776,7 +1796,7 @@ function Relatorios({
                 {alertasValidade.map((a) => (
                   <tr key={a.id}>
                     <td>{a.nome}</td>
-                    <td>{a.categoria}</td>
+                    <td>{prettyCat(a.categoria)}</td>
                     <td>{fmtDateBR(a.validade ?? null)}</td>
                     <td>{a.dias_para_vencer}</td>
                   </tr>
@@ -1803,7 +1823,7 @@ function Relatorios({
                 {alertasMinimo.map((a) => (
                   <tr key={a.id}>
                     <td>{a.nome}</td>
-                    <td>{a.categoria}</td>
+                    <td>{prettyCat(a.categoria)}</td>
                     <td>{a.quantidade}</td>
                     <td>{a.minimo}</td>
                     <td>{a.falta_para_minimo}</td>
