@@ -16,6 +16,7 @@ import {
   Pencil,
   AlertTriangle,
 } from "lucide-react";
+
 /**
  * ✅ Regras deste App.tsx
  * - Login + Criar conta (Supabase Auth)
@@ -233,6 +234,7 @@ export default function App() {
   const [authTab, setAuthTab] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -274,11 +276,6 @@ export default function App() {
   const [alertMinimo, setAlertMinimo] = useState<AlertMinimo[]>([]);
 const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta Básica Padrão", items: [] });
   const [assembledBaskets, setAssembledBaskets] = useState<number>(0);
-
-  // ---------- Usuários (admin) ----------
-  const [usersList, setUsersList] = useState<Profile[]>([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-  const [usersErr, setUsersErr] = useState<string | null>(null);
 
   const [dataErr, setDataErr] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
@@ -372,13 +369,23 @@ const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta B�
     e.preventDefault();
     setAuthError(null);
 
+    // validações básicas no front
+    if ((password || "").length < 8) {
+      setAuthError("A senha precisa ter pelo menos 8 caracteres.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setAuthError("As senhas não conferem.");
+      return;
+    }
+
     if (!supabase) {
       setAuthError("Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Netlify.");
       return;
     }
 
     setAuthBusy(true);
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     setAuthBusy(false);
 
     if (error) {
@@ -386,8 +393,21 @@ const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta B�
       return;
     }
 
+    // (opcional, mas ajuda bastante) tenta garantir o profile para novos usuários
+    // Se você já tem trigger no banco (handle_new_user), isso só reforça.
+    const u = data?.user;
+    if (u?.id) {
+      await supabase
+        .from("profiles")
+        .upsert([{ id: u.id, email: u.email ?? null, role: "viewer" }], { onConflict: "id" });
+    }
+
+    setPassword("");
+    setConfirmPassword("");
     setAuthTab("login");
-    setAuthError("Conta criada! Se o Supabase exigir confirmação por email, confirme e depois faça login.");
+    setAuthError(
+      "Conta criada! Se o Supabase exigir confirmação por e-mail, confirme e depois faça login."
+    );
   };
 
   const logout = async () => {
@@ -484,62 +504,6 @@ if (!cfg.error && cfg.data) {
       setDataLoading(false);
     }
   };
-
-  // ---------- Usuários (admin) ----------
-  const loadUsers = async () => {
-    if (!supabase) return;
-    if (!isAdmin) return;
-
-    setUsersErr(null);
-    setUsersLoading(true);
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id,email,role")
-      .order("email", { ascending: true });
-
-    setUsersLoading(false);
-
-    if (error) {
-      setUsersErr(error.message);
-      return;
-    }
-
-    setUsersList(
-      ((data as any[]) ?? []).map((r) => ({
-        id: String(r.id),
-        email: (r.email as string | null) ?? null,
-        role: (r.role as Role) ?? "viewer",
-      }))
-    );
-  };
-
-  const setUserRole = async (userId: string, role: Role) => {
-    if (!supabase) return;
-    if (!isAdmin) return;
-
-    setUsersErr(null);
-    setUsersLoading(true);
-
-    const { error } = await supabase.from("profiles").update({ role }).eq("id", userId);
-
-    setUsersLoading(false);
-
-    if (error) {
-      setUsersErr(error.message);
-      return;
-    }
-
-    await loadUsers();
-  };
-
-  useEffect(() => {
-    if (!supabase) return;
-    if (view !== "usuarios" || !isAdmin) return;
-    loadUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, isAdmin]);
-
 
   useEffect(() => {
     if (!supabase || !session) return;
@@ -686,29 +650,6 @@ if (!cfg.error && cfg.data) {
     }
   };
 
-  const deleteBenef = async (id: string) => {
-    if (!supabase) return;
-    setDataErr(null);
-
-    if (!canEdit) {
-      setDataErr("Você não tem permissão para editar.");
-      return;
-    }
-
-    if (!confirm("Excluir esta família/beneficiário?")) return;
-
-    setDataLoading(true);
-    try {
-      const { error } = await supabase.from("beneficiarios").delete().eq("id", id);
-      if (error) throw error;
-      await loadAll();
-    } catch (err: any) {
-      setDataErr(err?.message ?? String(err));
-    } finally {
-      setDataLoading(false);
-    }
-  };
-
   // ---------- Eventos (criar) ----------
   const openNewEvento = () => {
     setFormEvento({ title: "", date: new Date().toISOString().slice(0, 10), description: "" });
@@ -804,7 +745,11 @@ if (!cfg.error && cfg.data) {
           <div className="mt-5 flex gap-2">
             <button
               type="button"
-              onClick={() => setAuthTab("login")}
+              onClick={() => {
+                setAuthTab("login");
+                setAuthError(null);
+                setConfirmPassword("");
+              }}
               className={cn(
                 "flex-1 rounded-lg border px-3 py-2 font-semibold",
                 authTab === "login" ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200"
@@ -814,7 +759,10 @@ if (!cfg.error && cfg.data) {
             </button>
             <button
               type="button"
-              onClick={() => setAuthTab("signup")}
+              onClick={() => {
+                setAuthTab("signup");
+                setAuthError(null);
+              }}
               className={cn(
                 "flex-1 rounded-lg border px-3 py-2 font-semibold",
                 authTab === "signup" ? "bg-slate-900 text-white border-slate-900" : "bg-white border-slate-200"
@@ -845,10 +793,21 @@ if (!cfg.error && cfg.data) {
                 onChange={(ev) => setPassword(ev.target.value)}
                 required
               />
-              <div className="text-xs text-slate-500 mt-1">
-                Use uma senha forte. (O Supabase pode exigir confirmação por email.)
-              </div>
+              <div className="text-xs text-slate-500 mt-1">Use uma senha forte (mín. 8 caracteres).</div>
             </div>
+
+            {authTab === "signup" ? (
+              <div>
+                <label className="block text-sm font-medium text-slate-700">Confirmar senha</label>
+                <input
+                  type="password"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  value={confirmPassword}
+                  onChange={(ev) => setConfirmPassword(ev.target.value)}
+                  required
+                />
+              </div>
+            ) : null}
 
             {authError && (
               <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2 text-sm">
@@ -1290,6 +1249,10 @@ if (!cfg.error && cfg.data) {
                 </div>
               }
             >
+              <div className="text-sm text-slate-600 mb-3">
+                Cadastro rápido de beneficiários (tabela <b>public.beneficiarios</b>).
+              </div>
+
               <div className="overflow-auto border border-slate-200 rounded-xl">
                 <table className="min-w-[700px] w-full text-sm">
                   <thead className="bg-slate-100">
@@ -1298,13 +1261,12 @@ if (!cfg.error && cfg.data) {
                       <th className="p-2">Família</th>
                       <th className="p-2">Telefone</th>
                       <th className="p-2">Endereço</th>
-                      <th className="p-2 w-[140px]">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
                     {beneficiarios.length === 0 ? (
                       <tr>
-                        <td className="p-3 text-slate-600" colSpan={5}>
+                        <td className="p-3 text-slate-600" colSpan={4}>
                           Nenhum beneficiário.
                         </td>
                       </tr>
@@ -1315,21 +1277,6 @@ if (!cfg.error && cfg.data) {
                           <td className="p-2">{b.familySize}</td>
                           <td className="p-2">{b.phone}</td>
                           <td className="p-2">{b.address}</td>
-                          <td className="p-2">
-                            <button
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-lg border px-2 py-1",
-                                canEdit
-                                  ? "border-red-200 text-red-700 hover:bg-red-50"
-                                  : "border-slate-100 text-slate-300 cursor-not-allowed"
-                              )}
-                              onClick={() => (canEdit ? deleteBenef(b.id) : null)}
-                              disabled={!canEdit}
-                              title="Excluir"
-                            >
-                              <Trash2 size={16} /> Excluir
-                            </button>
-                          </td>
                         </tr>
                       ))
                     )}
@@ -1439,6 +1386,10 @@ if (!cfg.error && cfg.data) {
                 </div>
               }
             >
+              <div className="text-sm text-slate-600 mb-3">
+                Agenda de entregas (tabela <b>public.eventos_entrega</b>).
+              </div>
+
               <div className="space-y-2">
                 {eventos.length === 0 ? (
                   <div className="text-slate-600">Nenhum evento.</div>
@@ -1541,89 +1492,16 @@ if (!cfg.error && cfg.data) {
           )}
 
           {view === "usuarios" && isAdmin && (
-            <Card
-              title="Usuários"
-              right={
-                <button
-                  onClick={loadUsers}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white font-semibold px-3 py-2 hover:bg-slate-50"
-                  title="Recarregar usuários"
-                >
-                  {usersLoading ? <Loader2 className="animate-spin" size={18} /> : <Settings size={18} />}
-                  Atualizar
-                </button>
-              }
-            >
+            <Card title="Usuários (admin)">
               <div className="text-sm text-slate-700">
-                Aqui o <b>admin</b> consegue definir o cargo (viewer/editor/admin) dos usuários cadastrados.
+                Seu SQL atual permite:
+                <ul className="list-disc ml-5 mt-2 text-slate-700">
+                  <li>Usuário ler/editar apenas o próprio profile (RLS).</li>
+                  <li>O “admin” pelo email pode ser forçado no front via <b>VITE_ADMIN_EMAILS</b>.</li>
+                </ul>
               </div>
-
-              <div className="mt-2 text-xs text-slate-600">
-                Observação: para isso funcionar no Supabase, você precisa das <b>políticas RLS</b> de admin no SQL (eu deixei o SQL abaixo).
-              </div>
-
-              {usersErr ? (
-                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                  {usersErr}
-                </div>
-              ) : null}
-
-              <div className="mt-4 overflow-auto border border-slate-200 rounded-xl">
-                <table className="min-w-[720px] w-full text-sm">
-                  <thead className="bg-slate-100">
-                    <tr className="text-left">
-                      <th className="p-2">E-mail</th>
-                      <th className="p-2">Cargo</th>
-                      <th className="p-2">Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usersList.length === 0 ? (
-                      <tr>
-                        <td className="p-3 text-slate-600" colSpan={3}>
-                          {usersLoading ? "Carregando..." : "Nenhum usuário encontrado (ou RLS bloqueou)."}
-                        </td>
-                      </tr>
-                    ) : (
-                      usersList.map((u) => {
-                        const isMe = u.id === session.user.id;
-                        return (
-                          <tr key={u.id} className="border-t">
-                            <td className="p-2 font-medium text-slate-900">
-                              {u.email || u.id} {isMe ? <Badge>você</Badge> : null}
-                            </td>
-                            <td className="p-2">
-                              <select
-                                className="rounded-lg border border-slate-300 px-3 py-2"
-                                value={u.role}
-                                onChange={(e) => {
-                                  const next = e.target.value as Role;
-                                  setUsersList((prev) =>
-                                    prev.map((x) => (x.id === u.id ? { ...x, role: next } : x))
-                                  );
-                                }}
-                                disabled={usersLoading}
-                              >
-                                <option value="viewer">viewer</option>
-                                <option value="editor">editor</option>
-                                <option value="admin">admin</option>
-                              </select>
-                            </td>
-                            <td className="p-2">
-                              <button
-                                onClick={() => setUserRole(u.id, u.role)}
-                                disabled={usersLoading}
-                                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white px-3 py-2 font-semibold disabled:opacity-60"
-                              >
-                                Salvar
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+              <div className="mt-3 text-sm text-slate-600">
+                Para um painel de admin que muda roles de outros usuários, precisa de uma Function (service role) — não dá com anon key.
               </div>
             </Card>
           )}
@@ -2093,14 +1971,6 @@ function Relatorios({
       .reduce((acc, i) => acc + Number(i.quantidade || 0), 0);
   }, [estoque]);
 
-
-  const alimentosDetalhe = useMemo(() => {
-    const cats = new Set(["alimento_perecivel", "alimento_nao_perecivel"]);
-    return [...estoque]
-      .filter((i) => cats.has(i.categoria || "") && String(i.nome ?? "").trim() !== "")
-      .sort((a, b) => String(a.nome ?? "").localeCompare(String(b.nome ?? "")));
-  }, [estoque]);
-
   const printReport = () => {
     const html = document.getElementById("asa-report")?.innerHTML;
     if (!html) return;
@@ -2122,6 +1992,7 @@ function Relatorios({
     w.focus();
     w.print();
   };
+
   const downloadCSV = () => {
     const sep = ";";
     const esc = (v: any) => {
@@ -2251,35 +2122,7 @@ function Relatorios({
           </tbody>
         </table>
 
-        <h2 className="font-semibold mt-6">Alimentos (por item)</h2>
-        {alimentosDetalhe.length === 0 ? (
-          <div className="text-sm text-slate-600 mt-2">Nenhum alimento cadastrado no estoque.</div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Alimento</th>
-                <th>Categoria</th>
-                <th>Quantidade</th>
-                <th>Unidade</th>
-                <th>Validade</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alimentosDetalhe.map((it) => (
-                <tr key={it.id}>
-                  <td>{it.nome}</td>
-                  <td>{prettyCat(it.categoria)}</td>
-                  <td>{it.quantidade}</td>
-                  <td>{it.unidade}</td>
-                  <td>{fmtDateBR(it.validade ?? null)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        <h2 className="font-semibold mt-6">Beneficiários cadastrados no período</h2>
+        <h2 className="font-semibold">Beneficiários cadastrados no período</h2>
         {beneficiariosNoPeriodo.length === 0 ? (
           <div className="text-sm text-slate-600 mt-2">Nenhum cadastro no período.</div>
         ) : (
@@ -2305,7 +2148,7 @@ function Relatorios({
           </table>
         )}
 
-        <h2 className="font-semibold mt-6">Alertas</h2>
+        <h2 className="font-semibold">Alertas</h2>
         <div className="text-sm text-slate-600 mt-2">
           {alertasValidade.length === 0 && alertasMinimo.length === 0
             ? "Nenhum alerta no momento."
