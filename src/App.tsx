@@ -112,6 +112,13 @@ type BasketConfig = {
   items: BasketConfigItem[];
 };
 
+type CestaRegistro = {
+  id: string; // UUID
+  data: string; // YYYY-MM-DD
+  quantidade: number;
+  created_at: string | null;
+};
+
 
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnon = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -276,6 +283,7 @@ export default function App() {
   const [alertMinimo, setAlertMinimo] = useState<AlertMinimo[]>([]);
 const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta Básica Padrão", items: [] });
   const [assembledBaskets, setAssembledBaskets] = useState<number>(0);
+  const [cestasRegistros, setCestasRegistros] = useState<CestaRegistro[]>([]);
 
   const [dataErr, setDataErr] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
@@ -490,6 +498,26 @@ if (!cfg.error && cfg.data) {
     setAssembledBaskets(Number.isFinite(num) ? num : 0);
   }
 }
+      // Registros de cestas (para relatório por período/mês)
+      const cr = await supabase
+        .from("cestas_registros")
+        .select("*")
+        .order("data", { ascending: false });
+
+      // tabela pode não existir ainda
+      if (!cr.error && cr.data) {
+        setCestasRegistros(
+          (cr.data as any[]).map((r) => ({
+            id: String(r.id),
+            data: String(r.data),
+            quantidade: Number(r.quantidade ?? 0),
+            created_at: (r.created_at as string | null) ?? null,
+          }))
+        );
+      } else {
+        setCestasRegistros([]);
+      }
+
 
       setBeneficiarios((b.data as any[]) as Beneficiario[]);
       setEventos((e.data as any[]) as Evento[]);
@@ -1486,6 +1514,7 @@ if (!cfg.error && cfg.data) {
               estoque={estoque}
               beneficiarios={beneficiarios}
               assembledBaskets={assembledBaskets}
+              cestasRegistros={cestasRegistros}
               alertasValidade={alertValidade}
               alertasMinimo={alertMinimo}
             />
@@ -1558,6 +1587,7 @@ function CestasManager({
   const [newItemId, setNewItemId] = useState<string>("");
   const [newItemQtd, setNewItemQtd] = useState<number>(1);
   const [qtdCestas, setQtdCestas] = useState<number>(1);
+  const [registroData, setRegistroData] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   const inventorySorted = useMemo(() => {
     return [...inventory].sort((a, b) =>
@@ -1648,6 +1678,19 @@ const resetCestas = async () => {
   if (!confirm("Zerar o contador de cestas montadas? Isso não afeta o estoque, apenas o número do relatório.")) return;
 
   setBusy(true);
+
+  // opcional: também limpa o histórico de cestas (para o relatório por período)
+  const { error: delErr } = await supabase
+    .from("cestas_registros")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+
+  if (delErr) {
+    setBusy(false);
+    setErr("Falha ao limpar histórico de cestas: " + delErr.message);
+    return;
+  }
+
   const { error } = await supabase
     .from("configuracoes")
     .upsert([{ key: "assembled_baskets", value: 0 }], { onConflict: "key" });
@@ -1715,6 +1758,20 @@ const resetCestas = async () => {
       }
     }
 
+const regDate = String(registroData || "").trim() || new Date().toISOString().slice(0, 10);
+
+    // Registra no histórico (para relatório mensal/por período)
+    const { error: regErr } = await supabase
+      .from("cestas_registros")
+      .insert({ data: regDate, quantidade: n });
+
+    if (regErr) {
+      setBusy(false);
+      setErr("Baixa feita, mas falhou ao registrar a data da cesta: " + regErr.message);
+      return;
+    }
+
+
     // Atualiza contador de cestas montadas
     const newCount = assembledBaskets + n;
     const { error: cfgErr } = await supabase
@@ -1739,17 +1796,15 @@ const resetCestas = async () => {
         right={
           <div className="flex items-center gap-2">
             <Badge>{assembledBaskets} cestas montadas</Badge>
-            {isAdmin ? (
-              <button
-                onClick={resetCestas}
-                disabled={busy}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
-                title="Zerar contador de cestas"
-              >
-                <Trash2 size={16} />
-                Zerar
-              </button>
-            ) : null}
+            <button
+              onClick={resetCestas}
+              disabled={!isAdmin || busy}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
+              title={isAdmin ? "Zerar contador de cestas" : "Somente admin pode zerar"}
+            >
+              <Trash2 size={16} />
+              Zerar
+            </button>
           </div>
         }
       >
@@ -1875,7 +1930,18 @@ const resetCestas = async () => {
         </div>
 
         <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div className="w-full md:w-56">
+                    <div className="w-full md:w-56">
+            <label className="block text-sm font-medium text-slate-700">Data do registro</label>
+            <input
+              type="date"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              value={registroData}
+              onChange={(e) => setRegistroData(e.target.value)}
+              disabled={!canEdit || busy}
+            />
+            <div className="mt-1 text-xs text-slate-500">Você pode alterar para lançar cestas em outra data.</div>
+          </div>
+<div className="w-full md:w-56">
             <label className="block text-sm font-medium text-slate-700">Quantidade de cestas</label>
             <input
               type="number"
@@ -1905,12 +1971,14 @@ function Relatorios({
   estoque,
   beneficiarios,
   assembledBaskets,
+  cestasRegistros,
   alertasValidade,
   alertasMinimo,
 }: {
   estoque: EstoqueItem[];
   beneficiarios: Beneficiario[];
   assembledBaskets: number;
+  cestasRegistros: CestaRegistro[];
   alertasValidade: AlertValidade[];
   alertasMinimo: AlertMinimo[];
 }) {
@@ -1941,6 +2009,14 @@ function Relatorios({
     [beneficiarios, rangeStart, rangeEnd]
   );
 
+const cestasNoPeriodo = useMemo(() => {
+    let total = 0;
+    for (const r of cestasRegistros) {
+      if (inRange(r.data)) total += Number(r.quantidade ?? 0);
+    }
+    return total;
+  }, [cestasRegistros, rangeStart, rangeEnd]);
+
   const sumByCategorias = useMemo(() => {
     const by: Record<string, number> = {};
     for (const it of estoque) {
@@ -1970,6 +2046,13 @@ function Relatorios({
       .filter((i) => cats.has(i.categoria || ""))
       .reduce((acc, i) => acc + Number(i.quantidade || 0), 0);
   }, [estoque]);
+
+const setMonthRange = (year: number, monthIndex0: number) => {
+    const start = new Date(year, monthIndex0, 1);
+    const end = new Date(year, monthIndex0 + 1, 0);
+    setRangeStart(start.toISOString().slice(0, 10));
+    setRangeEnd(end.toISOString().slice(0, 10));
+  };
 
   const printReport = () => {
     const html = document.getElementById("asa-report")?.innerHTML;
@@ -2009,7 +2092,8 @@ function Relatorios({
     lines.push("");
 
     lines.push(line("Resumo", "Valor"));
-    lines.push(line("Cestas montadas", assembledBaskets));
+    lines.push(line("Cestas montadas no período", cestasNoPeriodo));
+    lines.push(line("Cestas montadas (total geral)", assembledBaskets));
     lines.push(line("Beneficiários cadastrados no período", beneficiariosNoPeriodo.length));
     lines.push(line("Itens lançados no período (soma de quantidade)", totalItensNoPeriodo));
     lines.push(line("Estoque atual - alimentos (soma)", alimentosAtual));
@@ -2087,6 +2171,29 @@ function Relatorios({
         <div className="text-sm text-slate-600 md:pb-2">
           Dica: por padrão, o período começa no <b>1º dia do mês</b>.
         </div>
+<div className="flex flex-wrap gap-2 md:pb-2">
+          <button
+            onClick={() => {
+              const n = new Date();
+              setMonthRange(n.getFullYear(), n.getMonth());
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+            title="Selecionar este mês"
+          >
+            Mensal (este mês)
+          </button>
+          <button
+            onClick={() => {
+              const n = new Date();
+              const prev = new Date(n.getFullYear(), n.getMonth() - 1, 1);
+              setMonthRange(prev.getFullYear(), prev.getMonth());
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+            title="Selecionar mês anterior"
+          >
+            Mensal (mês anterior)
+          </button>
+        </div>
       </div>
 
       <div id="asa-report" className="mt-4">
@@ -2095,7 +2202,8 @@ function Relatorios({
 
         <h2 className="font-semibold mt-4">Resumo</h2>
         <div className="flex flex-wrap gap-2 mt-2">
-          <span className="pill">Cestas montadas: <b>{assembledBaskets}</b></span>
+          <span className="pill">Cestas no período: <b>{cestasNoPeriodo}</b></span>
+          <span className="pill">Cestas (total geral): <b>{assembledBaskets}</b></span>
           <span className="pill">Beneficiários no período: <b>{beneficiariosNoPeriodo.length}</b></span>
           <span className="pill">Itens lançados no período (soma): <b>{totalItensNoPeriodo}</b></span>
           <span className="pill">Estoque atual (alimentos): <b>{alimentosAtual}</b></span>
