@@ -1981,13 +1981,10 @@ function Relatorios({
   alertasValidade: AlertValidade[];
   alertasMinimo: AlertMinimo[];
 }) {
-  const monthStart = useMemo(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  }, []);
-
-  const [rangeStart, setRangeStart] = useState<string>(() => monthStart.toISOString().slice(0, 10));
-  const [rangeEnd, setRangeEnd] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  // ✅ Padrão do relatório: começa em HOJE (mantém o dia inicial que o usuário escolher)
+  const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [rangeStart, setRangeStart] = useState<string>(() => todayISO);
+  const [rangeEnd, setRangeEnd] = useState<string>(() => todayISO);
 
   const inRange = (iso?: string | null) => {
     if (!iso) return false;
