@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Boxes,
   FileDown,
+  Printer,
   Settings,
   LogOut,
   Loader2,
@@ -109,13 +110,6 @@ type BasketConfigItem = {
 type BasketConfig = {
   name: string;
   items: BasketConfigItem[];
-};
-
-type CestaRegistro = {
-  id: string; // UUID
-  data: string; // YYYY-MM-DD
-  quantidade: number;
-  created_at: string | null;
 };
 
 
@@ -282,7 +276,6 @@ export default function App() {
   const [alertMinimo, setAlertMinimo] = useState<AlertMinimo[]>([]);
 const [basketConfig, setBasketConfig] = useState<BasketConfig>({ name: "Cesta Básica Padrão", items: [] });
   const [assembledBaskets, setAssembledBaskets] = useState<number>(0);
-  const [cestasRegistros, setCestasRegistros] = useState<CestaRegistro[]>([]);
 
   const [dataErr, setDataErr] = useState<string | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
@@ -497,26 +490,6 @@ if (!cfg.error && cfg.data) {
     setAssembledBaskets(Number.isFinite(num) ? num : 0);
   }
 }
-      // Registros de cestas (para relatório por período/mês)
-      const cr = await supabase
-        .from("cestas_registros")
-        .select("*")
-        .order("data", { ascending: false });
-
-      // tabela pode não existir ainda
-      if (!cr.error && cr.data) {
-        setCestasRegistros(
-          (cr.data as any[]).map((r) => ({
-            id: String(r.id),
-            data: String(r.data),
-            quantidade: Number(r.quantidade ?? 0),
-            created_at: (r.created_at as string | null) ?? null,
-          }))
-        );
-      } else {
-        setCestasRegistros([]);
-      }
-
 
       setBeneficiarios((b.data as any[]) as Beneficiario[]);
       setEventos((e.data as any[]) as Evento[]);
@@ -1513,7 +1486,6 @@ if (!cfg.error && cfg.data) {
               estoque={estoque}
               beneficiarios={beneficiarios}
               assembledBaskets={assembledBaskets}
-              cestasRegistros={cestasRegistros}
               alertasValidade={alertValidade}
               alertasMinimo={alertMinimo}
             />
@@ -1539,9 +1511,20 @@ if (!cfg.error && cfg.data) {
   );
 }
 
+
+function parseLocalDate(iso: string) {
+  // Evita bug de fuso: new Date('YYYY-MM-DD') é interpretado como UTC e pode "voltar 1 dia" no Brasil (-03).
+  // Para datas "date-only", parseia como data LOCAL.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, d] = iso.split("-").map((n) => Number(n));
+    return new Date(y, (m || 1) - 1, d || 1);
+  }
+  return new Date(iso);
+}
+
 function fmtDateBR(iso?: string | null) {
   if (!iso) return "-";
-  const d = new Date(iso);
+  const d = parseLocalDate(String(iso));
   if (Number.isNaN(d.getTime())) return String(iso);
   return d.toLocaleDateString("pt-BR");
 }
@@ -1586,7 +1569,6 @@ function CestasManager({
   const [newItemId, setNewItemId] = useState<string>("");
   const [newItemQtd, setNewItemQtd] = useState<number>(1);
   const [qtdCestas, setQtdCestas] = useState<number>(1);
-  const [registroData, setRegistroData] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   const inventorySorted = useMemo(() => {
     return [...inventory].sort((a, b) =>
@@ -1677,19 +1659,6 @@ const resetCestas = async () => {
   if (!confirm("Zerar o contador de cestas montadas? Isso não afeta o estoque, apenas o número do relatório.")) return;
 
   setBusy(true);
-
-  // opcional: também limpa o histórico de cestas (para o relatório por período)
-  const { error: delErr } = await supabase
-    .from("cestas_registros")
-    .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
-
-  if (delErr) {
-    setBusy(false);
-    setErr("Falha ao limpar histórico de cestas: " + delErr.message);
-    return;
-  }
-
   const { error } = await supabase
     .from("configuracoes")
     .upsert([{ key: "assembled_baskets", value: 0 }], { onConflict: "key" });
@@ -1757,20 +1726,6 @@ const resetCestas = async () => {
       }
     }
 
-const regDate = String(registroData || "").trim() || new Date().toISOString().slice(0, 10);
-
-    // Registra no histórico (para relatório mensal/por período)
-    const { error: regErr } = await supabase
-      .from("cestas_registros")
-      .insert({ data: regDate, quantidade: n });
-
-    if (regErr) {
-      setBusy(false);
-      setErr("Baixa feita, mas falhou ao registrar a data da cesta: " + regErr.message);
-      return;
-    }
-
-
     // Atualiza contador de cestas montadas
     const newCount = assembledBaskets + n;
     const { error: cfgErr } = await supabase
@@ -1795,15 +1750,17 @@ const regDate = String(registroData || "").trim() || new Date().toISOString().sl
         right={
           <div className="flex items-center gap-2">
             <Badge>{assembledBaskets} cestas montadas</Badge>
-            <button
-              onClick={resetCestas}
-              disabled={!isAdmin || busy}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
-              title={isAdmin ? "Zerar contador de cestas" : "Somente admin pode zerar"}
-            >
-              <Trash2 size={16} />
-              Zerar
-            </button>
+            {isAdmin ? (
+              <button
+                onClick={resetCestas}
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
+                title="Zerar contador de cestas"
+              >
+                <Trash2 size={16} />
+                Zerar
+              </button>
+            ) : null}
           </div>
         }
       >
@@ -1929,18 +1886,7 @@ const regDate = String(registroData || "").trim() || new Date().toISOString().sl
         </div>
 
         <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                    <div className="w-full md:w-56">
-            <label className="block text-sm font-medium text-slate-700">Data do registro</label>
-            <input
-              type="date"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-              value={registroData}
-              onChange={(e) => setRegistroData(e.target.value)}
-              disabled={!canEdit || busy}
-            />
-            <div className="mt-1 text-xs text-slate-500">Você pode alterar para lançar cestas em outra data.</div>
-          </div>
-<div className="w-full md:w-56">
+          <div className="w-full md:w-56">
             <label className="block text-sm font-medium text-slate-700">Quantidade de cestas</label>
             <input
               type="number"
@@ -1970,25 +1916,26 @@ function Relatorios({
   estoque,
   beneficiarios,
   assembledBaskets,
-  cestasRegistros,
   alertasValidade,
   alertasMinimo,
 }: {
   estoque: EstoqueItem[];
   beneficiarios: Beneficiario[];
   assembledBaskets: number;
-  cestasRegistros: CestaRegistro[];
   alertasValidade: AlertValidade[];
   alertasMinimo: AlertMinimo[];
 }) {
-  // ✅ Padrão do relatório: começa em HOJE (mantém o dia inicial que o usuário escolher)
-  const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [rangeStart, setRangeStart] = useState<string>(() => todayISO);
-  const [rangeEnd, setRangeEnd] = useState<string>(() => todayISO);
+  const monthStart = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }, []);
+
+  const [rangeStart, setRangeStart] = useState<string>(() => monthStart.toISOString().slice(0, 10));
+  const [rangeEnd, setRangeEnd] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   const inRange = (iso?: string | null) => {
     if (!iso) return false;
-    const d = new Date(iso);
+    const d = parseLocalDate(iso);
     if (Number.isNaN(d.getTime())) return false;
     const start = new Date(rangeStart + "T00:00:00");
     const end = new Date(rangeEnd + "T23:59:59");
@@ -2004,14 +1951,6 @@ function Relatorios({
     () => beneficiarios.filter((b) => inRange(b.created_at ?? null)),
     [beneficiarios, rangeStart, rangeEnd]
   );
-
-const cestasNoPeriodo = useMemo(() => {
-    let total = 0;
-    for (const r of cestasRegistros) {
-      if (inRange(r.data)) total += Number(r.quantidade ?? 0);
-    }
-    return total;
-  }, [cestasRegistros, rangeStart, rangeEnd]);
 
   const sumByCategorias = useMemo(() => {
     const by: Record<string, number> = {};
@@ -2043,119 +1982,23 @@ const cestasNoPeriodo = useMemo(() => {
       .reduce((acc, i) => acc + Number(i.quantidade || 0), 0);
   }, [estoque]);
 
-const setMonthRange = (year: number, monthIndex0: number) => {
-    const start = new Date(year, monthIndex0, 1);
-    const end = new Date(year, monthIndex0 + 1, 0);
-    setRangeStart(start.toISOString().slice(0, 10));
-    setRangeEnd(end.toISOString().slice(0, 10));
-  };
-
-  
-  const generatePDF = () => {
+  const printReport = () => {
     const html = document.getElementById("asa-report")?.innerHTML;
     if (!html) return;
-
-    const generatedAt = new Date().toLocaleString("pt-BR");
     const w = window.open("", "_blank", "noopener,noreferrer");
     if (!w) return;
-
-    // Cabeçalho formal + CSS para impressão (usuário pode "Salvar como PDF")
-    w.document.write(`<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>Relatório ASA</title>
-  <style>
-    @page { size: A4; margin: 18mm; }
-    body{
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      color:#0f172a;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    .header{
-      display:flex; align-items:center; gap:14px;
-      border-bottom: 2px solid #0f172a;
-      padding-bottom: 10px; margin-bottom: 14px;
-    }
-    .logo{
-      width:58px; height:58px; object-fit:contain;
-      border:1px solid #e2e8f0; border-radius:12px; padding:6px;
-      background:#fff;
-    }
-    .title{
-      display:flex; flex-direction:column;
-      gap:2px;
-    }
-    .title h1{ font-size:18px; margin:0; letter-spacing:0.2px; }
-    .title .sub{ font-size:12px; color:#334155; }
-    .meta{
-      margin-left:auto; text-align:right;
-      font-size:12px; color:#334155;
-    }
-    h2{
-      font-size:13px; margin:16px 0 8px; padding-bottom:6px;
-      border-bottom:1px solid #e2e8f0;
-    }
-    table{ width:100%; border-collapse:collapse; margin-top:8px; }
-    th, td{ border:1px solid #e2e8f0; padding:8px; font-size:11px; text-align:left; vertical-align:top; }
-    th{ background:#f1f5f9; }
-    .muted{ color:#475569; font-size:11px; }
-    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-    .kpi{
-      border:1px solid #e2e8f0; border-radius:12px; padding:10px;
-      background:#fff;
-    }
-    .kpi .label{ font-size:11px; color:#475569; }
-    .kpi .value{ font-size:16px; font-weight:800; margin-top:2px; }
-    .pill{
-      display:inline-block; padding:3px 10px; border:1px solid #e2e8f0;
-      border-radius:999px; background:#f8fafc; font-size:11px; margin-right:6px; margin-top:6px;
-    }
-    .footer{
-      margin-top:18px; padding-top:12px;
-      border-top:1px solid #e2e8f0;
-      font-size:11px; color:#475569;
-      display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
-    }
-    .sign{
-      margin-top:18px;
-      display:grid; grid-template-columns: 1fr 1fr; gap:18px;
-    }
-    .line{
-      border-top:1px solid #0f172a; padding-top:6px; font-size:11px;
-    }
-    /* Evita quebrar títulos e linhas no meio */
-    h2, .kpi, .header { break-inside: avoid; }
-    tr, td, th { break-inside: avoid; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <img class="logo" src="/asa-logo.jpg" alt="ASA" onerror="this.style.display='none'"/>
-    <div class="title">
-      <h1>Relatório Mensal — ASA</h1>
-      <div class="sub">Sistema de Controle • Estoque, Beneficiários, Alertas e Cestas</div>
-    </div>
-    <div class="meta">
-      <div><b>Período:</b> ${new Date(rangeStart).toLocaleDateString("pt-BR")} a ${new Date(rangeEnd).toLocaleDateString("pt-BR")}</div>
-      <div><b>Gerado em:</b> ${generatedAt}</div>
-    </div>
-  </div>
-
-  ${html}
-
-  <div class="sign">
-    <div class="line">Responsável (assinatura)</div>
-    <div class="line">Coordenação / Administração</div>
-  </div>
-
-  <div class="footer">
-    <div>Documento gerado automaticamente pelo Sistema ASA.</div>
-    <div class="muted">Sugestão: no diálogo de impressão, selecione “Salvar como PDF”.</div>
-  </div>
-</body>
-</html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Relatório ASA</title>
+      <style>
+        body{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; padding:24px; color:#0f172a;}
+        h1{font-size:20px;margin:0 0 8px;}
+        h2{font-size:14px;margin:18px 0 8px;}
+        table{width:100%; border-collapse:collapse; margin-top:8px;}
+        th,td{border:1px solid #e2e8f0; padding:8px; font-size:12px; text-align:left;}
+        th{background:#f1f5f9;}
+        .muted{color:#475569; font-size:12px;}
+        .pill{display:inline-block; padding:2px 8px; border:1px solid #e2e8f0; border-radius:999px; background:#f8fafc; font-size:12px; margin-right:6px;}
+      </style>
+    </head><body>${html}</body></html>`);
     w.document.close();
     w.focus();
     w.print();
@@ -2177,8 +2020,7 @@ const setMonthRange = (year: number, monthIndex0: number) => {
     lines.push("");
 
     lines.push(line("Resumo", "Valor"));
-    lines.push(line("Cestas montadas no período", cestasNoPeriodo));
-    lines.push(line("Cestas montadas (total geral)", assembledBaskets));
+    lines.push(line("Cestas montadas", assembledBaskets));
     lines.push(line("Beneficiários cadastrados no período", beneficiariosNoPeriodo.length));
     lines.push(line("Itens lançados no período (soma de quantidade)", totalItensNoPeriodo));
     lines.push(line("Estoque atual - alimentos (soma)", alimentosAtual));
@@ -2218,11 +2060,11 @@ const setMonthRange = (year: number, monthIndex0: number) => {
       right={
         <div className="flex items-center gap-2">
           <button
-            onClick={generatePDF}
+            onClick={printReport}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
           >
-            <FileDown size={16} />
-            Gerar PDF
+            <Printer size={16} />
+            Imprimir
           </button>
           <button
             onClick={downloadCSV}
@@ -2256,29 +2098,6 @@ const setMonthRange = (year: number, monthIndex0: number) => {
         <div className="text-sm text-slate-600 md:pb-2">
           Dica: por padrão, o período começa no <b>1º dia do mês</b>.
         </div>
-<div className="flex flex-wrap gap-2 md:pb-2">
-          <button
-            onClick={() => {
-              const n = new Date();
-              setMonthRange(n.getFullYear(), n.getMonth());
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
-            title="Selecionar este mês"
-          >
-            Mensal (este mês)
-          </button>
-          <button
-            onClick={() => {
-              const n = new Date();
-              const prev = new Date(n.getFullYear(), n.getMonth() - 1, 1);
-              setMonthRange(prev.getFullYear(), prev.getMonth());
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-slate-50"
-            title="Selecionar mês anterior"
-          >
-            Mensal (mês anterior)
-          </button>
-        </div>
       </div>
 
       <div id="asa-report" className="mt-4">
@@ -2287,8 +2106,7 @@ const setMonthRange = (year: number, monthIndex0: number) => {
 
         <h2 className="font-semibold mt-4">Resumo</h2>
         <div className="flex flex-wrap gap-2 mt-2">
-          <span className="pill">Cestas no período: <b>{cestasNoPeriodo}</b></span>
-          <span className="pill">Cestas (total geral): <b>{assembledBaskets}</b></span>
+          <span className="pill">Cestas montadas: <b>{assembledBaskets}</b></span>
           <span className="pill">Beneficiários no período: <b>{beneficiariosNoPeriodo.length}</b></span>
           <span className="pill">Itens lançados no período (soma): <b>{totalItensNoPeriodo}</b></span>
           <span className="pill">Estoque atual (alimentos): <b>{alimentosAtual}</b></span>
