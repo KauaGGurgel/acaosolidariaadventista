@@ -7,7 +7,6 @@ import {
   CalendarDays,
   Boxes,
   FileDown,
-  Printer,
   Settings,
   LogOut,
   Loader2,
@@ -2054,23 +2053,112 @@ const setMonthRange = (year: number, monthIndex0: number) => {
     setRangeEnd(end.toISOString().slice(0, 10));
   };
 
-  const printReport = () => {
+  
+  const generatePDF = () => {
     const html = document.getElementById("asa-report")?.innerHTML;
     if (!html) return;
+
+    const generatedAt = new Date().toLocaleString("pt-BR");
     const w = window.open("", "_blank", "noopener,noreferrer");
     if (!w) return;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"/><title>Relatório ASA</title>
-      <style>
-        body{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; padding:24px; color:#0f172a;}
-        h1{font-size:20px;margin:0 0 8px;}
-        h2{font-size:14px;margin:18px 0 8px;}
-        table{width:100%; border-collapse:collapse; margin-top:8px;}
-        th,td{border:1px solid #e2e8f0; padding:8px; font-size:12px; text-align:left;}
-        th{background:#f1f5f9;}
-        .muted{color:#475569; font-size:12px;}
-        .pill{display:inline-block; padding:2px 8px; border:1px solid #e2e8f0; border-radius:999px; background:#f8fafc; font-size:12px; margin-right:6px;}
-      </style>
-    </head><body>${html}</body></html>`);
+
+    // Cabeçalho formal + CSS para impressão (usuário pode "Salvar como PDF")
+    w.document.write(`<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Relatório ASA</title>
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body{
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      color:#0f172a;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .header{
+      display:flex; align-items:center; gap:14px;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 10px; margin-bottom: 14px;
+    }
+    .logo{
+      width:58px; height:58px; object-fit:contain;
+      border:1px solid #e2e8f0; border-radius:12px; padding:6px;
+      background:#fff;
+    }
+    .title{
+      display:flex; flex-direction:column;
+      gap:2px;
+    }
+    .title h1{ font-size:18px; margin:0; letter-spacing:0.2px; }
+    .title .sub{ font-size:12px; color:#334155; }
+    .meta{
+      margin-left:auto; text-align:right;
+      font-size:12px; color:#334155;
+    }
+    h2{
+      font-size:13px; margin:16px 0 8px; padding-bottom:6px;
+      border-bottom:1px solid #e2e8f0;
+    }
+    table{ width:100%; border-collapse:collapse; margin-top:8px; }
+    th, td{ border:1px solid #e2e8f0; padding:8px; font-size:11px; text-align:left; vertical-align:top; }
+    th{ background:#f1f5f9; }
+    .muted{ color:#475569; font-size:11px; }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .kpi{
+      border:1px solid #e2e8f0; border-radius:12px; padding:10px;
+      background:#fff;
+    }
+    .kpi .label{ font-size:11px; color:#475569; }
+    .kpi .value{ font-size:16px; font-weight:800; margin-top:2px; }
+    .pill{
+      display:inline-block; padding:3px 10px; border:1px solid #e2e8f0;
+      border-radius:999px; background:#f8fafc; font-size:11px; margin-right:6px; margin-top:6px;
+    }
+    .footer{
+      margin-top:18px; padding-top:12px;
+      border-top:1px solid #e2e8f0;
+      font-size:11px; color:#475569;
+      display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    }
+    .sign{
+      margin-top:18px;
+      display:grid; grid-template-columns: 1fr 1fr; gap:18px;
+    }
+    .line{
+      border-top:1px solid #0f172a; padding-top:6px; font-size:11px;
+    }
+    /* Evita quebrar títulos e linhas no meio */
+    h2, .kpi, .header { break-inside: avoid; }
+    tr, td, th { break-inside: avoid; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img class="logo" src="/asa-logo.jpg" alt="ASA" onerror="this.style.display='none'"/>
+    <div class="title">
+      <h1>Relatório Mensal — ASA</h1>
+      <div class="sub">Sistema de Controle • Estoque, Beneficiários, Alertas e Cestas</div>
+    </div>
+    <div class="meta">
+      <div><b>Período:</b> ${new Date(rangeStart).toLocaleDateString("pt-BR")} a ${new Date(rangeEnd).toLocaleDateString("pt-BR")}</div>
+      <div><b>Gerado em:</b> ${generatedAt}</div>
+    </div>
+  </div>
+
+  ${html}
+
+  <div class="sign">
+    <div class="line">Responsável (assinatura)</div>
+    <div class="line">Coordenação / Administração</div>
+  </div>
+
+  <div class="footer">
+    <div>Documento gerado automaticamente pelo Sistema ASA.</div>
+    <div class="muted">Sugestão: no diálogo de impressão, selecione “Salvar como PDF”.</div>
+  </div>
+</body>
+</html>`);
     w.document.close();
     w.focus();
     w.print();
@@ -2133,11 +2221,11 @@ const setMonthRange = (year: number, monthIndex0: number) => {
       right={
         <div className="flex items-center gap-2">
           <button
-            onClick={printReport}
+            onClick={generatePDF}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
           >
-            <Printer size={16} />
-            Imprimir
+            <FileDown size={16} />
+            Gerar PDF
           </button>
           <button
             onClick={downloadCSV}
